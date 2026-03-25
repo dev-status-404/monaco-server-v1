@@ -1,0 +1,631 @@
+{
+  "API_BASE_URL": "http://localhost:3000/public/api/v1",
+  "SERVICE": "User Service",
+  "DESCRIPTION": "Complete test cases for User Management API",
+  "PREREQUISITES": [
+    "Server running on port 3000",
+    "Database connected and synchronized",
+    "Have valid JWT tokens for authenticated requests",
+    "Admin and regular user accounts created"
+  ],
+  "TEST_CASES": [
+    {
+      "ID": 1,
+      "NAME": "Create New User",
+      "ENDPOINT": "POST /public/api/v1/users/create",
+      "DESCRIPTION": "Create a new user without authentication",
+      "AUTH_REQUIRED": false,
+      "REQUEST_BODY": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "john.doe@example.com",
+        "password": "SecurePassword123!",
+        "role": "user"
+      },
+      "EXPECTED_STATUS": 201,
+      "EXPECTED_RESPONSE": {
+        "code": 201,
+        "success": true,
+        "message": "user-created",
+        "data": {
+          "id": "uuid-string",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "john.doe@example.com",
+          "role": "user",
+          "blocked": false,
+          "active": true,
+          "createdAt": "2026-02-05T10:30:00.000Z",
+          "updatedAt": "2026-02-05T10:30:00.000Z"
+        }
+      },
+      "TEST_STEPS": [
+        "Open Postman and set method to POST",
+        "Enter URL: http://localhost:3000/public/api/v1/users/create",
+        "Go to Body tab and select 'raw' with JSON format",
+        "Paste the REQUEST_BODY JSON",
+        "Click Send",
+        "Verify response status is 201",
+        "Verify response.success is true",
+        "Verify response.data contains user ID",
+        "Note down the user ID for future tests"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "user-already-exists",
+          "CAUSE": "Email already registered",
+          "STATUS": 409
+        },
+        {
+          "ERROR": "Invalid email format",
+          "CAUSE": "Email validation failed",
+          "STATUS": 400
+        }
+      ]
+    },
+    {
+      "ID": 2,
+      "NAME": "Update Existing User",
+      "ENDPOINT": "PUT /public/api/v1/users/update",
+      "DESCRIPTION": "Update user details with authentication",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin", "user"],
+      "HEADERS": {
+        "Authorization": "Bearer YOUR_JWT_TOKEN",
+        "Content-Type": "application/json"
+      },
+      "REQUEST_BODY": {
+        "id": "user-uuid-from-test-1",
+        "firstName": "Jonathan",
+        "lastName": "Smith",
+        "email": "john.doe@example.com",
+        "role": "user",
+        "blocked": false
+      },
+      "EXPECTED_STATUS": 200,
+      "EXPECTED_RESPONSE": {
+        "code": 200,
+        "success": true,
+        "message": "user-updated",
+        "data": {
+          "id": "user-uuid-from-test-1",
+          "firstName": "Jonathan",
+          "lastName": "Smith",
+          "email": "john.doe@example.com",
+          "role": "user",
+          "blocked": false,
+          "active": true,
+          "createdAt": "2026-02-05T10:30:00.000Z",
+          "updatedAt": "2026-02-05T10:35:00.000Z"
+        }
+      },
+      "TEST_STEPS": [
+        "Ensure you have a valid JWT token from login (auth tests)",
+        "Open Postman and set method to PUT",
+        "Enter URL: http://localhost:3000/public/api/v1/users/update",
+        "Go to Headers tab",
+        "Add header: Authorization = Bearer YOUR_JWT_TOKEN",
+        "Go to Body tab, select 'raw' with JSON format",
+        "Paste the REQUEST_BODY with user ID from test 1",
+        "Click Send",
+        "Verify response status is 200",
+        "Verify firstName is updated to 'Jonathan'",
+        "Verify updatedAt timestamp is newer"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "No token provided",
+          "CAUSE": "Missing Authorization header",
+          "STATUS": 401
+        },
+        {
+          "ERROR": "Invalid token",
+          "CAUSE": "Malformed or expired JWT",
+          "STATUS": 401
+        },
+        {
+          "ERROR": "User not found",
+          "CAUSE": "Invalid user ID",
+          "STATUS": 401
+        }
+      ]
+    },
+    {
+      "ID": 3,
+      "NAME": "Get All Users with Filters",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Retrieve users with optional filtering and pagination",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "HEADERS": {
+        "Authorization": "Bearer ADMIN_JWT_TOKEN"
+      },
+      "QUERY_PARAMETERS": {
+        "page": "1",
+        "limit": "10",
+        "email": "john.doe@example.com (optional)",
+        "firstName": "John (optional)",
+        "role": "user (optional)",
+        "blocked": "false (optional)",
+        "active": "true (optional)"
+      },
+      "EXPECTED_STATUS": 200,
+      "EXPECTED_RESPONSE": {
+        "code": 200,
+        "success": true,
+        "message": "users-retrieved",
+        "data": {
+          "users": [
+            {
+              "id": "uuid-1",
+              "email": "john.doe@example.com",
+              "firstName": "Jonathan",
+              "lastName": "Smith",
+              "avatar_url": null,
+              "createdAt": "2026-02-05T10:30:00.000Z",
+              "updatedAt": "2026-02-05T10:35:00.000Z"
+            },
+            {
+              "id": "uuid-2",
+              "email": "jane.smith@example.com",
+              "firstName": "Jane",
+              "lastName": "Smith",
+              "avatar_url": null,
+              "createdAt": "2026-02-05T10:25:00.000Z",
+              "updatedAt": "2026-02-05T10:25:00.000Z"
+            }
+          ],
+          "totalCount": 2,
+          "totalPages": 1
+        }
+      },
+      "TEST_STEPS": [
+        "Login as admin to get admin JWT token",
+        "Open Postman and set method to GET",
+        "Enter URL: http://localhost:3000/public/api/v1/users/get",
+        "Go to Headers tab",
+        "Add header: Authorization = Bearer ADMIN_JWT_TOKEN",
+        "Go to Params tab",
+        "Add query parameters:",
+        "  - key: page, value: 1",
+        "  - key: limit, value: 10",
+        "Click Send",
+        "Verify response status is 200",
+        "Verify data.users is an array",
+        "Verify totalCount shows total users",
+        "Verify totalPages is calculated correctly",
+        "Test with filters: add email=john.doe@example.com to params",
+        "Send again and verify only matching users returned"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "No token provided",
+          "CAUSE": "Missing Authorization header",
+          "STATUS": 401
+        },
+        {
+          "ERROR": "Insufficient permissions",
+          "CAUSE": "User role is not admin",
+          "STATUS": 403
+        },
+        {
+          "ERROR": "Token expired",
+          "CAUSE": "JWT token has expired",
+          "STATUS": 401
+        }
+      ]
+    },
+    {
+      "ID": 4,
+      "NAME": "Get Users - Filter by Email",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Get specific user by email filter",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "QUERY_PARAMETERS": {
+        "page": "1",
+        "limit": "10",
+        "email": "john.doe@example.com"
+      },
+      "EXPECTED_STATUS": 200,
+      "EXPECTED_RESPONSE": {
+        "code": 200,
+        "success": true,
+        "message": "users-retrieved",
+        "data": {
+          "users": [
+            {
+              "id": "user-uuid",
+              "email": "john.doe@example.com",
+              "firstName": "Jonathan",
+              "lastName": "Smith",
+              "avatar_url": null,
+              "createdAt": "2026-02-05T10:30:00.000Z",
+              "updatedAt": "2026-02-05T10:35:00.000Z"
+            }
+          ],
+          "totalCount": 1,
+          "totalPages": 1
+        }
+      },
+      "TEST_STEPS": [
+        "Open Postman and set method to GET",
+        "Enter URL: http://localhost:3000/public/api/v1/users/get",
+        "Add Authorization header with admin token",
+        "Go to Params tab",
+        "Add parameters:",
+        "  - page: 1",
+        "  - limit: 10",
+        "  - email: john.doe@example.com",
+        "Click Send",
+        "Verify only the specified user is returned",
+        "Verify totalCount is 1"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "not-found",
+          "CAUSE": "No users match the filter criteria",
+          "STATUS": 400
+        }
+      ]
+    },
+    {
+      "ID": 5,
+      "NAME": "Get Users - Filter by Role",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Get all users with specific role",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "QUERY_PARAMETERS": {
+        "page": "1",
+        "limit": "10",
+        "role": "admin"
+      },
+      "EXPECTED_STATUS": 200,
+      "TEST_STEPS": [
+        "Open Postman with admin authorization",
+        "Set method to GET",
+        "Enter URL: http://localhost:3000/public/api/v1/users/get",
+        "Add query parameters:",
+        "  - page: 1",
+        "  - limit: 10",
+        "  - role: admin",
+        "Click Send",
+        "Verify response contains only admin users",
+        "Check role field equals 'admin' for all users"
+      ]
+    },
+    {
+      "ID": 6,
+      "NAME": "Get Users - Pagination Test",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Test pagination with page and limit",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "QUERY_PARAMETERS": {
+        "page": "2",
+        "limit": "5"
+      },
+      "EXPECTED_STATUS": 200,
+      "TEST_STEPS": [
+        "Get users with page=1, limit=5",
+        "Note the returned users",
+        "Change page to 2 and send request again",
+        "Verify different users are returned",
+        "Verify totalPages calculation is correct",
+        "Verify limit parameter controls number of records"
+      ]
+    },
+    {
+      "ID": 7,
+      "NAME": "Delete Single User",
+      "ENDPOINT": "DELETE /public/api/v1/users/delete/:id",
+      "DESCRIPTION": "Delete a specific user by ID",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin", "user"],
+      "HEADERS": {
+        "Authorization": "Bearer JWT_TOKEN"
+      },
+      "PATH_PARAMETER": {
+        "id": "user-uuid-from-test-1"
+      },
+      "EXPECTED_STATUS": 200,
+      "EXPECTED_RESPONSE": {
+        "code": 200,
+        "success": true,
+        "message": "user-deleted",
+        "data": 1
+      },
+      "TEST_STEPS": [
+        "Get a user ID to delete (use test case 4 result)",
+        "Open Postman and set method to DELETE",
+        "Enter URL: http://localhost:3000/public/api/v1/users/delete/user-uuid-here",
+        "Replace user-uuid-here with actual user ID",
+        "Add Authorization header with JWT token",
+        "Click Send",
+        "Verify response status is 200",
+        "Verify data returns 1 (number of deleted records)",
+        "Try to get deleted user - should not exist"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "not-found",
+          "CAUSE": "User ID does not exist",
+          "STATUS": 400
+        },
+        {
+          "ERROR": "No token provided",
+          "CAUSE": "Missing Authorization header",
+          "STATUS": 401
+        }
+      ]
+    },
+    {
+      "ID": 8,
+      "NAME": "Bulk Delete Users",
+      "ENDPOINT": "POST /public/api/v1/users/bulk-delete",
+      "DESCRIPTION": "Delete multiple users at once",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "HEADERS": {
+        "Authorization": "Bearer ADMIN_JWT_TOKEN",
+        "Content-Type": "application/json"
+      },
+      "REQUEST_BODY": {
+        "ids": [
+          "user-uuid-1",
+          "user-uuid-2",
+          "user-uuid-3"
+        ]
+      },
+      "EXPECTED_STATUS": 200,
+      "EXPECTED_RESPONSE": {
+        "code": 200,
+        "success": true,
+        "message": "users-deleted",
+        "data": 3
+      },
+      "TEST_STEPS": [
+        "Create 3-4 test users first (using test case 1)",
+        "Collect their IDs",
+        "Open Postman and set method to POST",
+        "Enter URL: http://localhost:3000/public/api/v1/users/bulk-delete",
+        "Add Authorization header with admin token",
+        "Go to Body tab, select 'raw' with JSON format",
+        "Enter the REQUEST_BODY with actual user IDs",
+        "Click Send",
+        "Verify response status is 200",
+        "Verify data shows count of deleted users (3 in this case)",
+        "Verify message says 'users-deleted'",
+        "Try to get deleted users - should not exist"
+      ],
+      "POSSIBLE_ERRORS": [
+        {
+          "ERROR": "Insufficient permissions",
+          "CAUSE": "Non-admin user attempting bulk delete",
+          "STATUS": 403
+        },
+        {
+          "ERROR": "not-found",
+          "CAUSE": "No users found with provided IDs",
+          "STATUS": 400
+        }
+      ]
+    },
+    {
+      "ID": 9,
+      "NAME": "Negative Test - Missing Required Fields",
+      "ENDPOINT": "POST /public/api/v1/users/create",
+      "DESCRIPTION": "Test API behavior with missing required fields",
+      "AUTH_REQUIRED": false,
+      "REQUEST_BODY": {
+        "firstName": "John"
+      },
+      "EXPECTED_STATUS": 400,
+      "EXPECTED_RESPONSE": {
+        "code": 400,
+        "success": false,
+        "message": "Missing required fields"
+      },
+      "TEST_STEPS": [
+        "Set method to POST",
+        "Enter URL: http://localhost:3000/public/api/v1/users/create",
+        "Go to Body, select raw JSON",
+        "Enter REQUEST_BODY (missing lastName, email, password)",
+        "Click Send",
+        "Verify response status is 400",
+        "Verify success is false",
+        "Verify error message indicates missing fields"
+      ]
+    },
+    {
+      "ID": 10,
+      "NAME": "Negative Test - Invalid Email Format",
+      "ENDPOINT": "POST /public/api/v1/users/create",
+      "DESCRIPTION": "Test with invalid email format",
+      "AUTH_REQUIRED": false,
+      "REQUEST_BODY": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "invalid-email-format",
+        "password": "SecurePassword123!"
+      },
+      "EXPECTED_STATUS": 400,
+      "TEST_STEPS": [
+        "Set method to POST",
+        "Enter URL: http://localhost:3000/public/api/v1/users/create",
+        "Add body with invalid email",
+        "Click Send",
+        "Verify status is 400",
+        "Verify error indicates invalid email format"
+      ]
+    },
+    {
+      "ID": 11,
+      "NAME": "Negative Test - Duplicate Email",
+      "ENDPOINT": "POST /public/api/v1/users/create",
+      "DESCRIPTION": "Test creating user with existing email",
+      "AUTH_REQUIRED": false,
+      "REQUEST_BODY": {
+        "firstName": "Jane",
+        "lastName": "Doe",
+        "email": "john.doe@example.com",
+        "password": "AnotherPassword123!"
+      },
+      "EXPECTED_STATUS": 409,
+      "EXPECTED_RESPONSE": {
+        "code": 409,
+        "success": false,
+        "message": "user-already-exists"
+      },
+      "TEST_STEPS": [
+        "Use an email that was already created in test 1",
+        "Set method to POST",
+        "Enter URL: http://localhost:3000/public/api/v1/users/create",
+        "Add body with duplicate email",
+        "Click Send",
+        "Verify response status is 409",
+        "Verify message is 'user-already-exists'"
+      ]
+    },
+    {
+      "ID": 12,
+      "NAME": "Negative Test - Unauthorized Access",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Test accessing admin endpoint without admin role",
+      "AUTH_REQUIRED": true,
+      "AUTH_ROLES": ["admin"],
+      "HEADERS": {
+        "Authorization": "Bearer USER_JWT_TOKEN"
+      },
+      "EXPECTED_STATUS": 403,
+      "EXPECTED_RESPONSE": {
+        "code": 403,
+        "success": false,
+        "message": "Insufficient permissions"
+      },
+      "TEST_STEPS": [
+        "Get a JWT token from a regular user (not admin)",
+        "Set method to GET",
+        "Enter URL: http://localhost:3000/public/api/v1/users/get",
+        "Add Authorization header with user token",
+        "Click Send",
+        "Verify response status is 403",
+        "Verify message indicates insufficient permissions"
+      ]
+    },
+    {
+      "ID": 13,
+      "NAME": "Negative Test - Missing Authorization",
+      "ENDPOINT": "GET /public/api/v1/users/get",
+      "DESCRIPTION": "Test accessing protected endpoint without token",
+      "AUTH_REQUIRED": true,
+      "EXPECTED_STATUS": 401,
+      "EXPECTED_RESPONSE": {
+        "code": 401,
+        "success": false,
+        "message": "No token provided"
+      },
+      "TEST_STEPS": [
+        "Set method to GET",
+        "Enter URL: http://localhost:3000/public/api/v1/users/get",
+        "DO NOT add Authorization header",
+        "Click Send",
+        "Verify response status is 401",
+        "Verify message indicates no token provided"
+      ]
+    },
+    {
+      "ID": 14,
+      "NAME": "Negative Test - Invalid User ID",
+      "ENDPOINT": "DELETE /public/api/v1/users/delete/:id",
+      "DESCRIPTION": "Test deleting user with non-existent ID",
+      "AUTH_REQUIRED": true,
+      "PATH_PARAMETER": {
+        "id": "invalid-uuid-12345"
+      },
+      "EXPECTED_STATUS": 400,
+      "EXPECTED_RESPONSE": {
+        "code": 400,
+        "success": false,
+        "message": "not-found"
+      },
+      "TEST_STEPS": [
+        "Set method to DELETE",
+        "Enter URL: http://localhost:3000/public/api/v1/users/delete/invalid-uuid-12345",
+        "Add valid Authorization header",
+        "Click Send",
+        "Verify response status is 400",
+        "Verify message is 'not-found'"
+      ]
+    },
+    {
+      "ID": 15,
+      "NAME": "Complete User Workflow",
+      "ENDPOINT": "Multiple",
+      "DESCRIPTION": "Complete workflow: Create → Update → List → Delete",
+      "TEST_STEPS": [
+        "Step 1: Create a new user using Test Case 1",
+        "  - Save the returned user ID",
+        "Step 2: Update that user using Test Case 2",
+        "  - Change firstName and lastName",
+        "Step 3: List all users using Test Case 3",
+        "  - Verify updated user appears in list",
+        "Step 4: Delete the user using Test Case 7",
+        "  - Use the saved user ID",
+        "Step 5: Try to list users again",
+        "  - Verify deleted user no longer appears"
+      ]
+    }
+  ],
+  "AUTHENTICATION_SETUP": {
+    "DESCRIPTION": "Steps to get JWT tokens for testing",
+    "STEP_1_USER_LOGIN": {
+      "ENDPOINT": "POST /public/api/v1/auth/signin",
+      "REQUEST_BODY": {
+        "email": "user@example.com",
+        "password": "UserPassword123!"
+      },
+      "RESPONSE": {
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    },
+    "STEP_2_ADMIN_LOGIN": {
+      "ENDPOINT": "POST /public/api/v1/auth/signin",
+      "REQUEST_BODY": {
+        "email": "admin@example.com",
+        "password": "AdminPassword123!"
+      },
+      "RESPONSE": {
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    },
+    "STEP_3_USE_TOKEN": {
+      "DESCRIPTION": "Use the JWT token in Authorization header for protected endpoints",
+      "HEADER": "Authorization: Bearer <jwt_token_here>"
+    }
+  },
+  "TESTING_SUMMARY": {
+    "TOTAL_TEST_CASES": 15,
+    "POSITIVE_TESTS": 7,
+    "NEGATIVE_TESTS": 6,
+    "WORKFLOW_TESTS": 1,
+    "COVERAGE": {
+      "CREATE_USER": "Test Cases 1, 9",
+      "UPDATE_USER": "Test Cases 2",
+      "GET_USERS": "Test Cases 3, 4, 5, 6",
+      "DELETE_USER": "Test Case 7",
+      "BULK_DELETE": "Test Case 8",
+      "AUTHENTICATION": "Test Cases 12, 13",
+      "VALIDATION": "Test Cases 9, 10, 11",
+      "END_TO_END": "Test Case 15"
+    }
+  },
+  "EXECUTION_ORDER": [
+    "First: Run authentication setup to get tokens",
+    "Second: Run positive test cases (1-8) in order",
+    "Third: Run negative test cases (9-14)",
+    "Fourth: Run complete workflow (15)",
+    "Finally: Verify all data consistency"
+  ]
+}
