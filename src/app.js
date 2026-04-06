@@ -34,7 +34,9 @@ const allowedOrigins = [
   "https://luke-client-v1.vercel.app",
   "https://www.luke-client-v1.vercel.app",
   "https://ucsweeps.com",
-  "https://www.ucsweeps.com"
+  "https://www.ucsweeps.com",
+  "https://www.monacogameroom.com",
+  "https://monacogameroom.com"
 ];
 
 const corsOptions = {
