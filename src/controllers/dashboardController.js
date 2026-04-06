@@ -14,6 +14,7 @@ const getDashboard = async (req, res) => {
           pages: response?.pages,
           insights: response?.insights || null,
           charts: response?.charts || null,
+          popularGames: response?.popularGames || null,
         } ?? null,
     });
   } catch (error) {

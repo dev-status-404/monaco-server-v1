@@ -1,10 +1,13 @@
 import { Op, fn, col } from "sequelize";
+import createError from "http-errors";
 
 import User from "../models/user.model.js";
 import Deposit from "../models/deposits.model.js";
 import WithdrawlsRequest from "../models/withdrawls_requests.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import GameRequest from "../models/games_request.model.js";
+import GameCredential from "../models/game_credentials.model.js";
+import Game from "../models/games.model.js";
 import Reward from "../models/rewards.model.js"; // only used for user dashboard
 /* =========================
    Helpers
@@ -173,6 +176,44 @@ const insightsFromCounts = (fullLabels, counts) => {
 };
 
 /* =========================
+   Popular Games
+========================= */
+
+const getPopularGames = async (dateWhere) => {
+  const where = { status: "assigned", ...dateWhere };
+
+  const rawCounts = await GameCredential.findAll({
+    where,
+    attributes: [
+      "game_id",
+      [fn("COUNT", col("id")), "playerCount"],
+    ],
+    group: ["game_id"],
+    order: [[fn("COUNT", col("id")), "DESC"]],
+    raw: true,
+  });
+
+  if (!rawCounts.length) return { games: [], totalPlayers: 0 };
+
+  const gameIds = rawCounts.map((r) => r.game_id);
+  const gamesData = await Game.findAll({
+    where: { id: gameIds },
+    attributes: ["id", "name", "image_url"],
+    raw: true,
+  });
+
+  const gamesMap = new Map(gamesData.map((g) => [g.id, g]));
+  const games = rawCounts.map((r) => ({
+    game: gamesMap.get(r.game_id) ?? { id: r.game_id, name: "Unknown", image_url: null },
+    playerCount: Number(r.playerCount),
+  }));
+
+  const totalPlayers = games.reduce((sum, g) => sum + g.playerCount, 0);
+
+  return { games, totalPlayers };
+};
+
+/* =========================
    Admin Dashboard
 ========================= */
 
@@ -228,6 +269,9 @@ const AdminDashboard = async (q) => {
     withdrawsChartRaw,
     transactionsChartRaw,
     gameRequestsChartRaw,
+
+    // popular games
+    popularGames,
   ] = await Promise.all([
     // totals
     User.count({ where: { role: "user" } }),
@@ -306,12 +350,17 @@ const AdminDashboard = async (q) => {
       ],
     }),
 
+    
+
     // charts
     groupByDayCount(User, usersWhere),
     groupByDayCount(Deposit, depositsWhere),
     groupByDayCount(WithdrawlsRequest, withdrawsWhere),
     groupByDayCount(WalletTransaction, transactionsWhere),
     groupByDayCount(GameRequest, gameRequestsWhere),
+
+    // popular games
+    getPopularGames(dateWhere),
   ]);
 
   // fill missing days with zeros
@@ -378,6 +427,7 @@ const AdminDashboard = async (q) => {
 
     charts,
     insights,
+    popularGames,
 
     pages: {
       users: {
