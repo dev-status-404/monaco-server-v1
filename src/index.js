@@ -3,13 +3,14 @@ import http from "http";
 import app from "./app.js";
 import { PORT } from "./config/env.js";
 import logger from "./utils/logger.js";
+import { initWebSocket } from "./realtime/socket.js";
 
 
 // Create the HTTP server from Express
 const server = http.createServer(app);
 
 // Attach Socket.IO to this same HTTP server
-// initWebSocket(server);
+initWebSocket(server);
 
 // Start listening
 server.listen(PORT, () => {

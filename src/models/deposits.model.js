@@ -53,7 +53,9 @@ const Deposit = sequelize.define(
     },
 
     status: {
-      validate: { isIn: [["initiated", "confirmed", "failed", "refunded"]] },
+      validate: {
+        isIn: [["initiated", "approved", "confirmed", "failed", "refunded"]],
+      },
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: "initiated",

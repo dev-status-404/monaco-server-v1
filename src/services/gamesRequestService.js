@@ -1,5 +1,7 @@
 import  createError from "http-errors";
 import GameRequest from "../models/games_request.model.js";
+import { emitToUserAndAdmins } from "../realtime/socket.js";
+import { notificationService } from "./notificationService.js";
 
 const createGameRequest = async (data) => {
   const gamesrequest = await GameRequest.create(data, {
@@ -10,6 +12,26 @@ const createGameRequest = async (data) => {
     throw createError(400, "creating-failed");
   }
 
+  emitToUserAndAdmins(gamesrequest.user_id, "game_request:created", {
+    type: "game_request",
+    action: "created",
+    requestId: gamesrequest.id,
+    userId: gamesrequest.user_id,
+    status: gamesrequest.status,
+    data: gamesrequest,
+  });
+
+  await notificationService.createForUserAndAdmins({
+    userId: gamesrequest.user_id,
+    type: "game_request",
+    title: "Game request created",
+    message: `Game request ${gamesrequest.id} has been created.`,
+    meta: {
+      requestId: gamesrequest.id,
+      status: gamesrequest.status,
+    },
+  });
+
   return {
     success: true,
     data: gamesrequest,
@@ -19,6 +41,11 @@ const createGameRequest = async (data) => {
 };
 
 const updateGameRequest = async (data) => {
+  const existing = await GameRequest.findByPk(data.id);
+  if (!existing) {
+    throw createError(404, "not-found");
+  }
+
   const gamesrequest = await GameRequest.update(
     { ...data },
     {
@@ -30,9 +57,54 @@ const updateGameRequest = async (data) => {
     throw createError(400, "Update-failed");
   }
 
+  const updated = await GameRequest.findByPk(data.id);
+  if (updated) {
+    const normalizedStatus = String(updated.status || "").toLowerCase();
+    emitToUserAndAdmins(updated.user_id, "game_request:updated", {
+      type: "game_request",
+      action: normalizedStatus === "approved" ? "approved" : "updated",
+      requestId: updated.id,
+      userId: updated.user_id,
+      status: updated.status,
+      data: updated,
+    });
+
+    await notificationService.createForUserAndAdmins({
+      userId: updated.user_id,
+      type: "game_request",
+      title: "Game request updated",
+      message: `Game request ${updated.id} is now ${updated.status}.`,
+      meta: {
+        requestId: updated.id,
+        status: updated.status,
+      },
+    });
+
+    if (normalizedStatus === "approved") {
+      emitToUserAndAdmins(updated.user_id, "game_request:approved", {
+        type: "game_request",
+        action: "approved",
+        requestId: updated.id,
+        userId: updated.user_id,
+        status: updated.status,
+      });
+
+      await notificationService.createForUserAndAdmins({
+        userId: updated.user_id,
+        type: "game_request",
+        title: "Game request approved",
+        message: `Game request ${updated.id} has been approved.`,
+        meta: {
+          requestId: updated.id,
+          status: updated.status,
+        },
+      });
+    }
+  }
+
   return {
     success: true,
-    data: gamesrequest,
+    data: updated || gamesrequest,
     message: "Game-Request-updated",
     code: 201,
   };

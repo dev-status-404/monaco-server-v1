@@ -23,6 +23,10 @@ import withdrawalRequestRoutes from "./routes/withdrawalRequestRoute.js";
 import gameCredentialsRoutes from "./routes/gameCredentialsRoute.js";
 import DashboardRoutes from "./routes/dashboardRoute.js";
 import gameRequestRoutes from "./routes/gameRequestRoute.js";
+import walletRoutes from "./routes/wallet.routes.js";
+import webhookRoutes from "./routes/webhook.routes.js";
+import notificationRoutes from "./routes/notificationRoute.js";
+import { startWebhookQueueWorker } from "./services/webhookQueue.service.js";
 
 const app = express();
 const globalPrefix = "/public/api/v1";
@@ -56,6 +60,10 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// Webhooks are mounted before global JSON middleware so they can be processed independently.
+app.use(`${globalPrefix}/webhooks`, express.json({ limit: "2mb" }), webhookRoutes);
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
@@ -71,6 +79,8 @@ if (config.env === "production") {
   app.use(`${globalPrefix}/auth`, limiter);
 }
 applyAssociations();
+startWebhookQueueWorker();
+
 app.use(`${globalPrefix}/auth`, authRoutes);
 app.use(`${globalPrefix}/dashboard`, DashboardRoutes);
 app.use(`${globalPrefix}/users`, userRoutes);
@@ -83,6 +93,8 @@ app.use(`${globalPrefix}/games`, gameRoutes);
 app.use(`${globalPrefix}/withdrawal-requests`, withdrawalRequestRoutes);
 app.use(`${globalPrefix}/game-requests`, gameRequestRoutes);
 app.use(`${globalPrefix}/game-creds`, gameCredentialsRoutes);
+app.use(`${globalPrefix}/wallet`, walletRoutes);
+app.use(`${globalPrefix}/notifications`, notificationRoutes);
 
 
 app.use((req, res, next) => {

@@ -1,5 +1,7 @@
 import createError from "http-errors";
 import GameCredential from "../models/game_credentials.model.js";
+import { emitToUserAndAdmins } from "../realtime/socket.js";
+import { notificationService } from "./notificationService.js";
 
 const create = async (data) => {
   const credential = await GameCredential.create(data);
@@ -72,6 +74,29 @@ const assign = async (game_id, user_id) => {
   await credential.update({
     assigned_to_user_id: user_id,
     status: "assigned",
+  });
+
+  const payload = {
+    type: "game_credential",
+    action: "assigned",
+    credentialId: credential.id,
+    userId: user_id,
+    gameId: game_id,
+    status: credential.status,
+  };
+
+  emitToUserAndAdmins(user_id, "game_credential:assigned", payload);
+
+  await notificationService.createForUserAndAdmins({
+    userId: user_id,
+    type: "game_credential",
+    title: "Game credential assigned",
+    message: `A game credential has been assigned for game ${game_id}.`,
+    meta: {
+      credentialId: credential.id,
+      gameId: game_id,
+      status: credential.status,
+    },
   });
 
   return {

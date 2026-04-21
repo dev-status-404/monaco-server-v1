@@ -53,6 +53,25 @@ const envVarsSchema = Joi.object()
     FRONTEND_URL: Joi.string().description(
       "Frontend URL for CORS and email templates",
     ),
+
+    // PointsMate
+    POINTSMATE_ENABLED: Joi.boolean()
+      .default(true)
+      .description("Enable PointsMate wallet integration"),
+    POINTSMATE_BASE_URL: Joi.string().description("PointsMate API base URL"),
+    POINTSMATE_API_KEY: Joi.string().description("PointsMate API key"),
+    POINTSMATE_ACCOUNT_ID: Joi.string().description(
+      "Default PointsMate account ID",
+    ),
+    POINTSMATE_WEBHOOK_SECRET: Joi.string().description(
+      "PointsMate webhook signature secret",
+    ),
+    POINTSMATE_TIMEOUT_MS: Joi.number()
+      .default(15000)
+      .description("PointsMate API request timeout in milliseconds"),
+
+    // Redis / Queue
+    REDIS_URL: Joi.string().description("Redis connection URL"),
   })
   .unknown();
 
@@ -124,6 +143,19 @@ const config = {
   google: {
     clientId: envVars.GOOGLE_CLIENT_ID,
     clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+  },
+
+  pointsMate: {
+    enabled: envVars.POINTSMATE_ENABLED,
+    baseUrl: envVars.POINTSMATE_BASE_URL,
+    apiKey: envVars.POINTSMATE_API_KEY,
+    accountId: envVars.POINTSMATE_ACCOUNT_ID,
+    webhookSecret: envVars.POINTSMATE_WEBHOOK_SECRET,
+    timeoutMs: envVars.POINTSMATE_TIMEOUT_MS,
+  },
+
+  redis: {
+    url: envVars.REDIS_URL,
   },
 };
 

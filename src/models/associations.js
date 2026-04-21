@@ -12,6 +12,7 @@ import Reward from "./rewards.model.js";
 import Game from "./games.model.js";
 import GameRequest from "./games_request.model.js";
 import GameCredential from "./game_credentials.model.js";
+import Notification from "./notifications.model.js";
 
 // (Optional) These two are redundant because you define them again inside applyAssociations,
 // but keeping them doesn't break anything. If you want, you can remove these top-level ones.
@@ -223,6 +224,21 @@ export const applyAssociations = () => {
   });
 
   /**
+   * NOTIFICATIONS
+   */
+  User.hasMany(Notification, {
+    as: "notifications",
+    foreignKey: "user_id",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  Notification.belongsTo(User, {
+    as: "user",
+    foreignKey: "user_id",
+  });
+
+  /**
    * GAMES
    */
   Game.hasMany(GameRequest, {
@@ -318,6 +334,7 @@ export const applyAssociations = () => {
     Game,
     GameRequest,
     GameCredential,
+    Notification,
   };
 };
 
@@ -332,4 +349,5 @@ export {
   Game,
   GameRequest,
   GameCredential,
+  Notification,
 };

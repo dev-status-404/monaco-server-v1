@@ -9,6 +9,22 @@ import GameRequest from "../models/games_request.model.js";
 import GameCredential from "../models/game_credentials.model.js";
 import Game from "../models/games.model.js";
 import Reward from "../models/rewards.model.js"; // only used for user dashboard
+
+const withdrawalDashboardAttributes = [
+  "id",
+  "user_id",
+  "game_id",
+  "game_name",
+  "amount",
+  "currency",
+  "method",
+  "api_status",
+  "status",
+  "reviewed_by_admin_id",
+  "admin_note",
+  "createdAt",
+  "updatedAt",
+];
 /* =========================
    Helpers
 ========================= */
@@ -19,6 +35,11 @@ const toInt = (v, fallback) => {
 };
 
 const toSortDir = (v) => (String(v).toUpperCase() === "ASC" ? "ASC" : "DESC");
+
+const normalizeUuidLike = (v) => {
+  const value = String(v ?? "").trim();
+  return value || null;
+};
 
 const paginate = (q, prefix) => {
   const page = toInt(q[`${prefix}_page`] ?? q.page, 1);
@@ -224,8 +245,7 @@ const AdminDashboard = async (q) => {
 
   // date filter
   const dateWhere = { createdAt: { [Op.gte]: start } };
-  console.log(q);
-  
+
   // where clauses
   const usersWhere = { role: "user", ...dateWhere };
   const depositsWhere = { ...dateWhere };
@@ -234,7 +254,7 @@ const AdminDashboard = async (q) => {
   const gameRequestsWhere = { ...dateWhere };
 
   // optional game filter
-  const gameId = toInt(q.game_id ?? q.gameId, null);
+  const gameId = normalizeUuidLike(q.game_id ?? q.gameId);
   if (gameId) {
     depositsWhere.game_id = gameId;
     withdrawsWhere.game_id = gameId;
@@ -317,6 +337,7 @@ const AdminDashboard = async (q) => {
       limit: wdrPg.limit,
       offset: wdrPg.offset,
       order: [[wdrPg.sortBy, wdrPg.sortDir]],
+      attributes: withdrawalDashboardAttributes,
       include: [
         {
           association: "user",
@@ -417,7 +438,7 @@ const AdminDashboard = async (q) => {
     scope: "admin",
     filter: { range: String(q.range ?? "1w"), game_id: gameId ?? null },
 
-    data: {
+    totals: {
       totalUsers,
       totalDeposits,
       totalWithdraws,
@@ -478,8 +499,9 @@ const AdminDashboard = async (q) => {
 };
 
 const UserDashboard = async (q) => {
-  const { user_id,game_id } = q;
-  if (!user_id) throw new Error("user_id is required for user dashboard");
+  const user_id = normalizeUuidLike(q.user_id);
+  const game_id = normalizeUuidLike(q.game_id);
+  if (!user_id) throw createError(400, "user_id-is-required-for-user-dashboard");
 
   const depositsWhere = { user_id };
   const withdrawsWhere = { user_id };
@@ -487,7 +509,7 @@ const UserDashboard = async (q) => {
 
   // optional game filter for user dashboard
   if (game_id) {
-    depositsWhere.game_id = game_id ;
+    depositsWhere.game_id = game_id;
     withdrawsWhere.game_id = game_id;
   }
 
@@ -526,6 +548,7 @@ const UserDashboard = async (q) => {
       limit: wdrPg.limit,
       offset: wdrPg.offset,
       order: [[wdrPg.sortBy, wdrPg.sortDir]],
+      attributes: withdrawalDashboardAttributes,
       include: [
         {
           association: "user",
@@ -563,15 +586,29 @@ const UserDashboard = async (q) => {
 ========================= */
 
 const getDashboard = async (q) => {
-  const { user_id } = q;
+  const user_id = normalizeUuidLike(q.user_id);
+  const requestedScope = String(q.scope ?? "").trim().toLowerCase();
 
-  const user = await User.findOne({ where: { id: user_id } });
-  if (!user) throw createError(400, "user-not-found");
+  if (requestedScope === "admin") {
+    return AdminDashboard(q);
+  }
+
+  if (!user_id) {
+    return AdminDashboard(q);
+  }
+
+  const user = await User.findByPk(user_id);
 
   if (user?.role === "admin") return AdminDashboard(q);
-  if (user?.role === "user") return UserDashboard(q);
+  if (user?.role === "user") return UserDashboard({ ...q, user_id });
 
-  throw createError(403, "unauthorized");
+  if (requestedScope === "user") {
+    return UserDashboard({ ...q, user_id });
+  }
+
+  // Frontend can issue dashboard calls before the user profile is hydrated.
+  // In that case, fall back to the user-scope aggregates keyed by the provided id.
+  return UserDashboard({ ...q, user_id });
 };
 
 export const dashboardService = { getDashboard };

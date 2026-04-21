@@ -46,6 +46,11 @@ const WithdrawalRequest = sequelize.define(
       allowNull: false,
     },
 
+    destination: {
+      type: DataTypes.STRING(300),
+      allowNull: false,
+    },
+
     api_status: {
       type: DataTypes.STRING,
       allowNull: false,
