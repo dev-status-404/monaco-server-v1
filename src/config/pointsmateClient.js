@@ -36,12 +36,20 @@ const request = async ({ method, url, data, params }) => {
     return response.data;
   } catch (error) {
     const providerMessage =
-      error?.response?.data?.message || error?.message || "pointsmate-request-failed";
+      error?.response?.data?.message ||
+      error?.message ||
+      "pointsmate-request-failed";
     throw createError(502, `pointsmate-request-failed: ${providerMessage}`);
   }
 };
 
-const createReceive = async ({ accountId, type, amountSats, memo, referenceId }) =>
+const createReceive = async ({
+  accountId,
+  type,
+  amountSats,
+  memo,
+  referenceId,
+}) =>
   request({
     method: "POST",
     url: "/pmext/api/v1/wallet/receive",
@@ -54,7 +62,13 @@ const createReceive = async ({ accountId, type, amountSats, memo, referenceId })
     },
   });
 
-const sendFunds = async ({ accountId, address, amountSats, memo, referenceId }) =>
+const sendFunds = async ({
+  accountId,
+  address,
+  amountSats,
+  memo,
+  referenceId,
+}) =>
   request({
     method: "POST",
     url: "/pmext/api/v1/wallet/send",
@@ -74,7 +88,12 @@ const createSendLink = async ({ accountId }) =>
     data: { accountId: getAccountId(accountId) },
   });
 
-const generatePointsCode = async ({ accountId, amountSats, referenceId, memo }) =>
+const generatePointsCode = async ({
+  accountId,
+  amountSats,
+  referenceId,
+  memo,
+}) =>
   request({
     method: "POST",
     url: "/pmext/api/v1/wallet/points-code/generate",

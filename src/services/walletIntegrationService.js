@@ -5,7 +5,9 @@ import config from "../config/env.js";
 const terminalDepositStatuses = new Set(["confirmed", "approved"]);
 
 const normalizeReceiveType = (rawType = "") => {
-  const value = String(rawType || "").trim().toLowerCase();
+  const value = String(rawType || "")
+    .trim()
+    .toLowerCase();
 
   if (!value) return "Lightning";
   if (value.includes("on-chain") || value.includes("onchain")) return "onchain";
@@ -18,8 +20,12 @@ const buildIdempotencyKey = ({ entityType, entityId, status }) => {
 };
 
 const shouldTriggerDepositReceive = (previousStatus, nextStatus) => {
-  const wasTerminal = terminalDepositStatuses.has(String(previousStatus || "").toLowerCase());
-  const isTerminal = terminalDepositStatuses.has(String(nextStatus || "").toLowerCase());
+  const wasTerminal = terminalDepositStatuses.has(
+    String(previousStatus || "").toLowerCase(),
+  );
+  const isTerminal = terminalDepositStatuses.has(
+    String(nextStatus || "").toLowerCase(),
+  );
 
   return !wasTerminal && isTerminal;
 };
@@ -91,13 +97,18 @@ const createReceiveRequest = async ({
     const responseData = response.data;
 
     if (!responseData || responseData.isSucceed === false) {
-      throw createError(502, responseData?.message || "pointsmate-request-failed");
+      throw createError(
+        502,
+        responseData?.message || "pointsmate-request-failed",
+      );
     }
 
     return responseData;
   } catch (error) {
     const providerMessage =
-      error?.response?.data?.message || error?.message || "pointsmate-request-failed";
+      error?.response?.data?.message ||
+      error?.message ||
+      "pointsmate-request-failed";
 
     throw createError(502, `pointsmate-receive-failed: ${providerMessage}`);
   }
@@ -155,13 +166,18 @@ const createSendRequest = async ({
     const responseData = response.data;
 
     if (!responseData || responseData.isSucceed === false) {
-      throw createError(502, responseData?.message || "pointsmate-request-failed");
+      throw createError(
+        502,
+        responseData?.message || "pointsmate-request-failed",
+      );
     }
 
     return responseData;
   } catch (error) {
     const providerMessage =
-      error?.response?.data?.message || error?.message || "pointsmate-request-failed";
+      error?.response?.data?.message ||
+      error?.message ||
+      "pointsmate-request-failed";
 
     throw createError(502, `pointsmate-send-failed: ${providerMessage}`);
   }
