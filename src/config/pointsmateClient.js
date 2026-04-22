@@ -3,13 +3,20 @@ import createError from "http-errors";
 import config from "./env.js";
 
 const getAccountId = (accountId) => accountId || config.pointsMate.accountId;
+const getAuthorizationHeader = () => {
+  const apiKey = String(config.pointsMate.apiKey || "").trim();
+
+  if (!apiKey) return "";
+  if (/^Bearer\s+/i.test(apiKey)) return apiKey;
+
+  return `Bearer ${apiKey}`;
+};
 
 const client = axios.create({
   baseURL: (config.pointsMate.baseUrl || "").replace(/\/+$/, ""),
   timeout: config.pointsMate.timeoutMs,
   headers: {
-    Authorization: `${config.pointsMate.apiKey || ""}`,
-    authorization: `Bearer ${config.pointsMate.apiKey || ""}`,
+    Authorization: getAuthorizationHeader(),
     "Content-Type": "application/json",
     Accept: "application/json",
   },

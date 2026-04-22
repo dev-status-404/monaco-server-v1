@@ -34,6 +34,15 @@ const buildSendUrl = () => {
   return `${baseUrl}/pmext/api/v1/wallet/send`;
 };
 
+const getAuthorizationHeader = () => {
+  const apiKey = String(config.pointsMate.apiKey || "").trim();
+
+  if (!apiKey) return "";
+  if (/^Bearer\s+/i.test(apiKey)) return apiKey;
+
+  return `Bearer ${apiKey}`;
+};
+
 const createReceiveRequest = async ({
   accountId,
   type,
@@ -72,7 +81,7 @@ const createReceiveRequest = async ({
     const response = await axios.post(buildReceiveUrl(), payload, {
       timeout: config.pointsMate.timeoutMs,
       headers: {
-        Authorization: config.pointsMate.apiKey,
+        Authorization: getAuthorizationHeader(),
         "Content-Type": "application/json",
         Accept: "application/json",
         "X-Idempotency-Key": idempotencyKey,
@@ -136,7 +145,7 @@ const createSendRequest = async ({
     const response = await axios.post(buildSendUrl(), payload, {
       timeout: config.pointsMate.timeoutMs,
       headers: {
-        Authorization: config.pointsMate.apiKey,
+        Authorization: getAuthorizationHeader(),
         "Content-Type": "application/json",
         Accept: "application/json",
         "X-Idempotency-Key": idempotencyKey,
