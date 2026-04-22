@@ -47,7 +47,7 @@ const WithdrawalRequest = sequelize.define(
     },
 
     destination: {
-      type: DataTypes.STRING(300),
+      type: DataTypes.STRING(1024),
       allowNull: false,
     },
 
@@ -55,14 +55,6 @@ const WithdrawalRequest = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: "pending",
-    },
-
-    game_id:{
-      type: DataTypes.UUID,
-      allowNull: false,
-      references: { model: "games", key: "id" },
-      onDelete: "RESTRICT",
-      onUpdate: "CASCADE",
     },
 
     status: {

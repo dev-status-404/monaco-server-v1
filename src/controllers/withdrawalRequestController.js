@@ -100,6 +100,30 @@ const bulkDeleteWithdrawalRequests = async (req, res) => {
   }
 };
 
+const approveWithdrawalRequest = async (req, res) => {
+  try {
+    const response = await withdrawalRequestService.approveWithdrawalRequest({
+      id: req.body?.withdrawalId || req.body?.id,
+      reviewedByAdminId: req.body?.reviewedByAdminId || req.body?.reviewed_by_admin_id,
+      adminNote: req.body?.adminNote || req.body?.admin_note,
+    });
+
+    return res.status(200).json({
+      code: 200,
+      success: true,
+      message: "withdrawal-request-approved",
+      data: response ?? null,
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 400).json({
+      code: error?.statusCode || 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 
 export const withdrawalRequestController = {
     createWithdrawalRequest,
@@ -107,4 +131,5 @@ export const withdrawalRequestController = {
     getWithdrawalRequest,
     deleteWithdrawalRequest,
     bulkDeleteWithdrawalRequests,
+    approveWithdrawalRequest,
 };

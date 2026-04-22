@@ -18,6 +18,13 @@ router.post(
   walletController.requestWithdrawal,
 );
 
+router.post(
+  "/withdraw/approve",
+  // auth(["admin"]),
+  walletController.approveWithdrawalValidation,
+  walletController.approveWithdrawal,
+);
+
 router.get(
   "/balance/:userId",
   // auth(["admin", "user"]),

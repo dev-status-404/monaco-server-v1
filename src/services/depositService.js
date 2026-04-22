@@ -2,6 +2,7 @@ import createError from "http-errors";
 import { v4 as uuidv4 } from "uuid";
 import Deposit from "../models/deposits.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
+import WalletAccount from "../models/wallet_account.model.js";
 import { sequelize } from "../config/db.js";
 import { pointsmateClient } from "../config/pointsmateClient.js";
 import { walletIntegrationService } from "./walletIntegrationService.js";
@@ -18,6 +19,30 @@ const normalizeDepositAmount = ({ amount, amountSats }) => {
   }
 
   return numericAmount;
+};
+
+const ensureWalletAccount = async ({ userId, transaction }) => {
+  let walletAccount = await WalletAccount.findOne({
+    where: { user_id: userId },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (walletAccount) {
+    return walletAccount;
+  }
+
+  walletAccount = await WalletAccount.create(
+    {
+      user_id: userId,
+      balance: 0,
+      currency: "USD",
+      status: "active",
+    },
+    { transaction },
+  );
+
+  return walletAccount;
 };
 
 const createDeposit = async (data) => {
@@ -128,15 +153,10 @@ const updateDeposit = async (id, data) => {
     const updatedDeposit = await Deposit.findByPk(id, { transaction: tx });
 
     if (shouldTrigger) {
-      // const walletAccount = await WalletAccount.findOne({
-      //   where: { user_id: updatedDeposit.user_id },
-      //   transaction: tx,
-      //   lock: tx.LOCK.UPDATE,
-      // });
-
-      // if (!walletAccount) {
-      //   throw createError(400, "wallet-account-not-found");
-      // }
+      const walletAccount = await ensureWalletAccount({
+        userId: updatedDeposit.user_id,
+        transaction: tx,
+      });
 
       const idempotencyKey = walletIntegrationService.buildIdempotencyKey({
         entityType: "deposit",
@@ -152,7 +172,7 @@ const updateDeposit = async (id, data) => {
       if (!walletTransaction) {
         walletTransaction = await WalletTransaction.create(
           {
-            wallet_account_id: "743e53f1-ff3a-42cc-bdb7-4f2bc665fb27",
+            wallet_account_id: walletAccount.id,
             type: "deposit",
             direction: "credit",
             amount: updatedDeposit.amount,
@@ -175,7 +195,7 @@ const updateDeposit = async (id, data) => {
       }
 
       const providerResponse = await walletIntegrationService.createReceiveRequest({
-        accountId: "743e53f1-ff3a-42cc-bdb7-4f2bc665fb27",
+        accountId: walletAccount.id,
         type: updatedDeposit.provider,
         amount: updatedDeposit.amount,
         memo: `Deposit ${updatedDeposit.id}`,

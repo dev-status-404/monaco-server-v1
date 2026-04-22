@@ -16,11 +16,56 @@ const depositValidation = validate([
 ]);
 
 const withdrawValidation = validate([
-  body("userId").isUUID(),
-  body("address").isString().isLength({ min: 3, max: 300 }),
-  body("amountSats").isInt({ min: 1 }),
+  body("userId").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("user_id").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("address")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 3, max: 1024 }),
+  body("destination")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 3, max: 1024 }),
+  body("amountSats").optional().isInt({ min: 1 }),
+  body("amount").optional().isFloat({ min: 0.01 }),
+  body("method").optional().isString().isLength({ max: 50 }),
+  body("currency").optional().isString().isLength({ max: 20 }),
+  body("gameId").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("game_id").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("gameName").optional().isString().isLength({ max: 120 }),
+  body("game_name").optional().isString().isLength({ max: 120 }),
   body("memo").optional().isString().isLength({ max: 100 }),
   body("referenceId").optional().isString().isLength({ max: 128 }),
+  body().custom((payload) => {
+    const userId = String(payload?.userId || payload?.user_id || "").trim();
+    const destination = String(payload?.address || payload?.destination || "").trim();
+    const amount = payload?.amountSats ?? payload?.amount;
+
+    if (!userId) throw new Error("userId-or-user_id-required");
+    if (!destination) throw new Error("address-or-destination-required");
+    if (destination.length > 1024) throw new Error("destination-too-long");
+    if (amount === undefined || amount === null || amount === "") {
+      throw new Error("amount-or-amountSats-required");
+    }
+
+    return true;
+  }),
+]);
+
+const approveWithdrawalValidation = validate([
+  body("withdrawalId").optional().isUUID(),
+  body("id").optional().isUUID(),
+  body("reviewedByAdminId").optional().isUUID(),
+  body("reviewed_by_admin_id").optional().isUUID(),
+  body("adminNote").optional().isString().isLength({ max: 255 }),
+  body("admin_note").optional().isString().isLength({ max: 255 }),
+  body().custom((payload) => {
+    if (!payload?.withdrawalId && !payload?.id) {
+      throw new Error("withdrawalId-or-id-required");
+    }
+
+    return true;
+  }),
 ]);
 
 const balanceValidation = validate([param("userId").isUUID()]);
@@ -55,7 +100,18 @@ const depositFunds = async (req, res) => {
 
 const requestWithdrawal = async (req, res) => {
   try {
-    const data = await withdrawalRequestService.requestWithdrawal(req.body);
+    const data = await withdrawalRequestService.requestWithdrawal({
+      userId: req.body.userId || req.body.user_id,
+      address: req.body.address || req.body.destination,
+      amountSats: req.body.amountSats,
+      amount: req.body.amount,
+      memo: req.body.memo,
+      referenceId: req.body.referenceId,
+      method: req.body.method,
+      currency: req.body.currency,
+      gameId: req.body.gameId || req.body.game_id,
+      gameName: req.body.gameName || req.body.game_name,
+    });
     return res.status(202).json({ success: true, data });
   } catch (error) {
     return res.status(error?.statusCode || 400).json({
@@ -63,6 +119,26 @@ const requestWithdrawal = async (req, res) => {
       error: {
         code: error?.statusCode || 400,
         message: error?.message || "withdrawal-failed",
+      },
+    });
+  }
+};
+
+const approveWithdrawal = async (req, res) => {
+  try {
+    const data = await withdrawalRequestService.approveWithdrawalRequest({
+      id: req.body.withdrawalId || req.body.id,
+      reviewedByAdminId: req.body.reviewedByAdminId || req.body.reviewed_by_admin_id,
+      adminNote: req.body.adminNote || req.body.admin_note,
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(error?.statusCode || 400).json({
+      success: false,
+      error: {
+        code: error?.statusCode || 400,
+        message: error?.message || "withdrawal-approval-failed",
       },
     });
   }
@@ -125,11 +201,13 @@ const getTransactionDetail = async (req, res) => {
 export const walletController = {
   depositValidation,
   withdrawValidation,
+  approveWithdrawalValidation,
   balanceValidation,
   transactionDetailValidation,
   listValidation,
   depositFunds,
   requestWithdrawal,
+  approveWithdrawal,
   getBalance,
   listTransactions,
   getTransactionDetail,

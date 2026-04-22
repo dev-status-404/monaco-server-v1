@@ -1,10 +1,9 @@
 import createError from "http-errors";
-import { v4 as uuidv4 } from "uuid";
 import config from "../config/env.js";
 import { WithdrawalRequest } from "../models/associations.js";
+import WalletAccount from "../models/wallet_account.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import { sequelize } from "../config/db.js";
-import { pointsmateClient } from "../config/pointsmateClient.js";
 import { walletIntegrationService } from "./walletIntegrationService.js";
 import { transactionService } from "./transaction.service.js";
 import { emitToUserAndAdmins } from "../realtime/socket.js";
@@ -12,12 +11,21 @@ import { notificationService } from "./notificationService.js";
 
 const normalizeDestination = (payload = {}) => {
   const rawValue = payload.destination ?? payload.address;
-  return String(rawValue ?? "").trim();
+
+  if (rawValue === undefined || rawValue === null) {
+    return undefined;
+  }
+
+  return String(rawValue).trim();
 };
 
 const buildWithdrawalPayload = (payload = {}) => {
   const { address, ...rest } = payload;
   const destination = normalizeDestination(payload);
+
+  if (destination === undefined) {
+    return rest;
+  }
 
   return {
     ...rest,
@@ -25,8 +33,42 @@ const buildWithdrawalPayload = (payload = {}) => {
   };
 };
 
+const assertMaxLength = (value, max, fieldName) => {
+  if (value === undefined || value === null) return;
+  if (String(value).length > max) {
+    throw createError(400, `${fieldName}-too-long`);
+  }
+};
+
+const ensureWalletAccount = async ({ userId, transaction }) => {
+  let walletAccount = await WalletAccount.findOne({
+    where: { user_id: userId },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  if (walletAccount) {
+    return walletAccount;
+  }
+
+  walletAccount = await WalletAccount.create(
+    {
+      user_id: userId,
+      balance: 0,
+      currency: "USD",
+      status: "active",
+    },
+    { transaction },
+  );
+
+  return walletAccount;
+};
+
 const createWithdrawalRequest = async (data) => {
   const payload = buildWithdrawalPayload(data);
+
+  assertMaxLength(payload.destination, 1024, "destination");
+  assertMaxLength(payload.admin_note, 255, "admin-note");
 
   if (!payload.destination) {
     throw createError(400, "withdrawal-destination-required");
@@ -73,6 +115,9 @@ const updateWithdrawalRequest = async (data) => {
 
   try {
     const payload = buildWithdrawalPayload(data);
+    assertMaxLength(payload.destination, 1024, "destination");
+    assertMaxLength(payload.admin_note, 255, "admin-note");
+
     const existingWithdrawal = await WithdrawalRequest.findByPk(data.id, {
       transaction: tx,
       lock: tx.LOCK.UPDATE,
@@ -101,7 +146,10 @@ const updateWithdrawalRequest = async (data) => {
     });
 
     if (shouldTrigger) {
-      const destination = normalizeDestination(updatedWithdrawal);
+      // Use the stored destination directly from DB records (not via payload normalizer)
+      const destination = String(
+        updatedWithdrawal.destination || existingWithdrawal.destination || ""
+      ).trim();
       if (!destination) {
         throw createError(400, "withdrawal-destination-required");
       }
@@ -110,6 +158,12 @@ const updateWithdrawalRequest = async (data) => {
       if (!platformAccountId) {
         throw createError(500, "pointsmate-account-id-required");
       }
+
+      // Ensure FK-safe wallet account for legacy users who do not have one yet.
+      const userWalletAccount = await ensureWalletAccount({
+        userId: updatedWithdrawal.user_id,
+        transaction: tx,
+      });
 
       const idempotencyKey = walletIntegrationService.buildIdempotencyKey({
         entityType: "withdrawal",
@@ -125,7 +179,7 @@ const updateWithdrawalRequest = async (data) => {
       if (!walletTransaction) {
         walletTransaction = await WalletTransaction.create(
           {
-            wallet_account_id: platformAccountId,
+            wallet_account_id: userWalletAccount.id,
             type: "withdrawal",
             direction: "debit",
             amount: updatedWithdrawal.amount,
@@ -347,115 +401,74 @@ const bulkDeleteWithdrawalRequests = async (ids) => {
   };
 };
 
-const requestWithdrawal = async ({ userId, address, amountSats, memo, referenceId }) => {
+const requestWithdrawal = async ({
+  userId,
+  address,
+  amountSats,
+  amount,
+  memo,
+  method,
+  currency,
+  gameId,
+  gameName,
+}) => {
   const userContext = await transactionService.resolveUserContext(userId);
   if (!userContext) {
     throw createError(404, "user-or-wallet-not-found");
   }
 
-  if (!address || !String(address).trim()) {
+  const destination = String(address || "").trim();
+  if (!destination) {
     throw createError(400, "address-required");
   }
 
-  const numericAmountSats = Number(amountSats);
-  if (!Number.isFinite(numericAmountSats) || numericAmountSats < 1) {
-    throw createError(400, "invalid-amountSats");
+  const numericAmount = Number(amountSats ?? amount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    throw createError(400, "invalid-amount");
   }
 
-  const balance = await pointsmateClient.getBalance({ accountId: userContext.accountId });
-  const spendable = Number(balance?.totalBalance?.totalSpendableBalance || balance?.balanceSats || 0);
-  if (!Number.isFinite(spendable) || numericAmountSats > spendable) {
-    throw createError(400, "insufficient-balance");
+  if (!gameId) {
+    throw createError(400, "game-id-required");
   }
 
-  const safeReferenceId = referenceId || uuidv4();
-  const tx = await sequelize.transaction();
-
-  try {
-    const existing = await WalletTransaction.findOne({
-      where: { idempotency_key: safeReferenceId },
-      transaction: tx,
-    });
-
-    if (existing) {
-      throw createError(409, "duplicate-reference-id");
-    }
-
-    const walletTx = await WalletTransaction.create(
-      {
-        wallet_account_id: userContext.wallet.id,
-        user_id: userId,
-        type: "withdrawal",
-        direction: "debit",
-        amount: (numericAmountSats / 100000000).toFixed(8),
-        status: "pending",
-        api_status: "pending",
-        reference_type: "pointsmate_send",
-        idempotency_key: safeReferenceId,
-        meta: {
-          memo,
-          amountSats: String(numericAmountSats),
-          address: String(address).trim(),
-        },
-      },
-      { transaction: tx },
-    );
-
-    const provider = await pointsmateClient.sendFunds({
-      accountId: userContext.accountId,
-      address: String(address).trim(),
-      amountSats: numericAmountSats,
-      memo,
-      referenceId: safeReferenceId,
-    });
-
-    await walletTx.update(
-      {
-        api_status: provider?.isSucceed ? "initiated" : "failed",
-        meta: {
-          ...(walletTx.meta || {}),
-          providerTransactionId: provider.transactionId,
-          providerResponse: provider,
-        },
-      },
-      { transaction: tx },
-    );
-
-    await tx.commit();
-
-    const txPayload = walletTx.get({ plain: true });
-    emitToUserAndAdmins(userId, "withdrawal:updated", {
-      type: "withdrawal",
-      action: "initiated",
-      transactionId: txPayload.id,
-      userId,
-      status: txPayload.status,
-      api_status: txPayload.api_status,
-      data: txPayload,
-    });
-
-    await notificationService.createForUserAndAdmins({
-      userId,
-      type: "withdrawal",
-      title: "Withdrawal initiated",
-      message: `Withdrawal transaction ${txPayload.id} has been initiated.`,
-      meta: {
-        transactionId: txPayload.id,
-        status: txPayload.status,
-        api_status: txPayload.api_status,
-      },
-    });
-
-    return {
-      transactionId: walletTx.id,
-      pmTransactionId: provider.transactionId,
-      status: "PENDING",
-      message: "Withdrawal initiated. Will complete when confirmed.",
-    };
-  } catch (error) {
-    await tx.rollback();
-    throw error;
+  if (!gameName) {
+    throw createError(400, "game-name-required");
   }
+
+  const response = await createWithdrawalRequest({
+    user_id: userId,
+    game_id: gameId,
+    game_name: gameName,
+    amount: numericAmount,
+    currency: currency || "USD",
+    method: "pointsmate",
+    destination,
+    status: "requested",
+    api_status: "pending",
+    admin_note: memo || null,
+  });
+
+  return {
+    withdrawalId: response?.data?.id,
+    status: response?.data?.status || "requested",
+    api_status: response?.data?.api_status || "pending",
+    message: "Withdrawal requested. Will proceed after admin approval.",
+  };
+};
+
+const approveWithdrawalRequest = async ({ id, reviewedByAdminId, adminNote }) => {
+  if (!id) {
+    throw createError(400, "withdrawal-id-required");
+  }
+
+  const response = await updateWithdrawalRequest({
+    id,
+    status: "approved",
+    reviewed_by_admin_id: reviewedByAdminId || null,
+    admin_note: adminNote || null,
+  });
+
+  return response?.data;
 };
 
 export const withdrawalRequestService = {
@@ -465,4 +478,5 @@ export const withdrawalRequestService = {
   deleteWithdrawalRequest,
   bulkDeleteWithdrawalRequests,
   requestWithdrawal,
+  approveWithdrawalRequest,
 };

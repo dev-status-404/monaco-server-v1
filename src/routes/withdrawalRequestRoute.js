@@ -7,6 +7,7 @@ const router = express.Router();
 // Withdrawal Request routes
 router.post("/create", withdrawalRequestController.createWithdrawalRequest);
 router.put("/update", withdrawalRequestController.updateWithdrawalRequest);
+router.post("/approve", withdrawalRequestController.approveWithdrawalRequest);
 router.get("/get", withdrawalRequestController.getWithdrawalRequest);
 router.delete("/delete/:id", withdrawalRequestController.deleteWithdrawalRequest);
 router.post("/bulk-delete", withdrawalRequestController.bulkDeleteWithdrawalRequests);

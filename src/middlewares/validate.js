@@ -12,7 +12,11 @@ const validate = (validations) => {
     }
 
     const extractedErrors = [];
-    errors.array().map(err => extractedErrors.push({ [err.param]: err.msg }));
+    errors.array().map((err) => {
+      const field = err?.path || err?.param || err?.location || "field";
+      extractedErrors.push({ [field]: err?.msg || "Invalid value" });
+      return null;
+    });
 
     next(new ApiError(
       httpStatus.BAD_REQUEST,

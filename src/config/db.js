@@ -60,6 +60,28 @@ const dbConnection = async () => {
     }
     
     logger.info('Database synchronized.');
+
+    try {
+      const queryInterface = sequelize.getQueryInterface();
+      const table = await queryInterface.describeTable('withdrawal_requests');
+      const destination = table?.destination;
+
+      const destinationType = String(destination?.type || '').toLowerCase();
+      const needsWidening =
+        destinationType.includes('character varying(255)') ||
+        destinationType.includes('varchar(255)');
+
+      if (needsWidening) {
+        await queryInterface.changeColumn('withdrawal_requests', 'destination', {
+          type: Sequelize.STRING(1024),
+          allowNull: false,
+        });
+
+        logger.info('Schema updated: withdrawal_requests.destination widened to VARCHAR(1024).');
+      }
+    } catch (schemaError) {
+      logger.warn(`Schema update skipped/failed for withdrawal_requests.destination: ${schemaError?.message || schemaError}`);
+    }
   } catch (error) {
     logger.error('Unable to connect to CockroachDB:', error);
     process.exit(1);
