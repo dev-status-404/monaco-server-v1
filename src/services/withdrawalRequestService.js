@@ -456,7 +456,13 @@ const requestWithdrawal = async ({
   };
 };
 
-const approveWithdrawalRequest = async ({ id, reviewedByAdminId, adminNote }) => {
+const approveWithdrawalRequest = async ({
+  id,
+  reviewedByAdminId,
+  adminNote,
+  destination,
+  address,
+}) => {
   if (!id) {
     throw createError(400, "withdrawal-id-required");
   }
@@ -466,6 +472,8 @@ const approveWithdrawalRequest = async ({ id, reviewedByAdminId, adminNote }) =>
     status: "approved",
     reviewed_by_admin_id: reviewedByAdminId || null,
     admin_note: adminNote || null,
+    destination: destination ?? address,
+    address: address ?? destination,
   });
 
   return response?.data;

@@ -130,6 +130,8 @@ const approveWithdrawal = async (req, res) => {
       id: req.body.withdrawalId || req.body.id,
       reviewedByAdminId: req.body.reviewedByAdminId || req.body.reviewed_by_admin_id,
       adminNote: req.body.adminNote || req.body.admin_note,
+      destination: req.body.destination || req.body.address,
+      address: req.body.address || req.body.destination,
     });
 
     return res.status(200).json({ success: true, data });
