@@ -16,8 +16,14 @@ const depositValidation = validate([
 ]);
 
 const withdrawValidation = validate([
-  body("userId").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
-  body("user_id").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("userId")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 1, max: 128 }),
+  body("user_id")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 1, max: 128 }),
   body("address")
     .optional()
     .customSanitizer((v) => String(v))
@@ -30,15 +36,23 @@ const withdrawValidation = validate([
   body("amount").optional().isFloat({ min: 0.01 }),
   body("method").optional().isString().isLength({ max: 50 }),
   body("currency").optional().isString().isLength({ max: 20 }),
-  body("gameId").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
-  body("game_id").optional().customSanitizer((v) => String(v)).isLength({ min: 1, max: 128 }),
+  body("gameId")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 1, max: 128 }),
+  body("game_id")
+    .optional()
+    .customSanitizer((v) => String(v))
+    .isLength({ min: 1, max: 128 }),
   body("gameName").optional().isString().isLength({ max: 120 }),
   body("game_name").optional().isString().isLength({ max: 120 }),
   body("memo").optional().isString().isLength({ max: 100 }),
   body("referenceId").optional().isString().isLength({ max: 128 }),
   body().custom((payload) => {
     const userId = String(payload?.userId || payload?.user_id || "").trim();
-    const destination = String(payload?.address || payload?.destination || "").trim();
+    const destination = String(
+      payload?.address || payload?.destination || "",
+    ).trim();
     const amount = payload?.amountSats ?? payload?.amount;
 
     if (!userId) throw new Error("userId-or-user_id-required");
@@ -78,7 +92,9 @@ const transactionDetailValidation = validate([
 const listValidation = validate([
   param("userId").isUUID(),
   query("type").optional().isIn(["deposit", "withdrawal"]),
-  query("status").optional().isIn(["pending", "completed", "failed", "canceled"]),
+  query("status")
+    .optional()
+    .isIn(["pending", "completed", "failed", "canceled"]),
   query("page").optional().isInt({ min: 1 }),
   query("limit").optional().isInt({ min: 1, max: 100 }),
 ]);
@@ -128,7 +144,8 @@ const approveWithdrawal = async (req, res) => {
   try {
     const data = await withdrawalRequestService.approveWithdrawalRequest({
       id: req.body.withdrawalId || req.body.id,
-      reviewedByAdminId: req.body.reviewedByAdminId || req.body.reviewed_by_admin_id,
+      reviewedByAdminId:
+        req.body.reviewedByAdminId || req.body.reviewed_by_admin_id,
       adminNote: req.body.adminNote || req.body.admin_note,
       destination: req.body.destination || req.body.address,
       address: req.body.address || req.body.destination,

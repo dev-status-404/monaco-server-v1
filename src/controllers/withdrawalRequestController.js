@@ -2,7 +2,9 @@ import { withdrawalRequestService } from "../services/withdrawalRequestService.j
 
 const createWithdrawalRequest = async (req, res) => {
   try {
-    const response = await withdrawalRequestService.createWithdrawalRequest(req.body);
+    const response = await withdrawalRequestService.createWithdrawalRequest(
+      req.body,
+    );
 
     return res.status(response.code).json({
       code: response.code,
@@ -22,7 +24,9 @@ const createWithdrawalRequest = async (req, res) => {
 
 const updateWithdrawalRequest = async (req, res) => {
   try {
-    const response = await withdrawalRequestService.updateWithdrawalRequest(req.body);
+    const response = await withdrawalRequestService.updateWithdrawalRequest(
+      req.body,
+    );
 
     return res.status(response.code).json({
       code: response.code,
@@ -42,7 +46,9 @@ const updateWithdrawalRequest = async (req, res) => {
 
 const getWithdrawalRequest = async (req, res) => {
   try {
-    const response = await withdrawalRequestService.getWithdrawalRequest(req.body);
+    const response = await withdrawalRequestService.getWithdrawalRequest(
+      req.body,
+    );
 
     return res.status(response.code).json({
       code: response.code,
@@ -62,7 +68,9 @@ const getWithdrawalRequest = async (req, res) => {
 
 const deleteWithdrawalRequest = async (req, res) => {
   try {
-    const response = await withdrawalRequestService.deleteWithdrawalRequest(req.params.id);
+    const response = await withdrawalRequestService.deleteWithdrawalRequest(
+      req.params.id,
+    );
 
     return res.status(response.code).json({
       code: response.code,
@@ -82,7 +90,8 @@ const deleteWithdrawalRequest = async (req, res) => {
 
 const bulkDeleteWithdrawalRequests = async (req, res) => {
   try {
-    const response = await withdrawalRequestService.bulkDeleteWithdrawalRequests(req.body.ids);
+    const response =
+      await withdrawalRequestService.bulkDeleteWithdrawalRequests(req.body.ids);
 
     return res.status(response.code).json({
       code: response.code,
@@ -104,7 +113,8 @@ const approveWithdrawalRequest = async (req, res) => {
   try {
     const response = await withdrawalRequestService.approveWithdrawalRequest({
       id: req.body?.withdrawalId || req.body?.id,
-      reviewedByAdminId: req.body?.reviewedByAdminId || req.body?.reviewed_by_admin_id,
+      reviewedByAdminId:
+        req.body?.reviewedByAdminId || req.body?.reviewed_by_admin_id,
       adminNote: req.body?.adminNote || req.body?.admin_note,
       destination: req.body?.destination || req.body?.address,
       address: req.body?.address || req.body?.destination,
@@ -126,12 +136,11 @@ const approveWithdrawalRequest = async (req, res) => {
   }
 };
 
-
 export const withdrawalRequestController = {
-    createWithdrawalRequest,
-    updateWithdrawalRequest,
-    getWithdrawalRequest,
-    deleteWithdrawalRequest,
-    bulkDeleteWithdrawalRequests,
-    approveWithdrawalRequest,
+  createWithdrawalRequest,
+  updateWithdrawalRequest,
+  getWithdrawalRequest,
+  deleteWithdrawalRequest,
+  bulkDeleteWithdrawalRequests,
+  approveWithdrawalRequest,
 };

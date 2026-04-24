@@ -148,7 +148,7 @@ const updateWithdrawalRequest = async (data) => {
     if (shouldTrigger) {
       // Use the stored destination directly from DB records (not via payload normalizer)
       const destination = String(
-        updatedWithdrawal.destination || existingWithdrawal.destination || ""
+        updatedWithdrawal.destination || existingWithdrawal.destination || "",
       ).trim();
       if (!destination) {
         throw createError(400, "withdrawal-destination-required");
@@ -202,18 +202,21 @@ const updateWithdrawalRequest = async (data) => {
         );
       }
 
-      const providerResponse = await walletIntegrationService.createSendRequest({
-        accountId: platformAccountId,
-        address: destination,
-        amount: updatedWithdrawal.amount,
-        memo: `Withdrawal ${updatedWithdrawal.id}`,
-        referenceId: `withdrawal:${updatedWithdrawal.id}`,
-        idempotencyKey,
-      });
+      const providerResponse = await walletIntegrationService.createSendRequest(
+        {
+          accountId: platformAccountId,
+          address: destination,
+          amount: updatedWithdrawal.amount,
+          memo: `Withdrawal ${updatedWithdrawal.id}`,
+          referenceId: `withdrawal:${updatedWithdrawal.id}`,
+          idempotencyKey,
+        },
+      );
 
       await updatedWithdrawal.update(
         {
-          api_status: providerResponse?.isSucceed === false ? "failed" : "initiated",
+          api_status:
+            providerResponse?.isSucceed === false ? "failed" : "initiated",
         },
         { transaction: tx },
       );
@@ -221,7 +224,8 @@ const updateWithdrawalRequest = async (data) => {
       await walletTransaction.update(
         {
           status: "pending",
-          api_status: providerResponse?.isSucceed === false ? "failed" : "initiated",
+          api_status:
+            providerResponse?.isSucceed === false ? "failed" : "initiated",
           meta: {
             ...(walletTransaction.meta || {}),
             providerResponse,
@@ -234,7 +238,9 @@ const updateWithdrawalRequest = async (data) => {
 
     await tx.commit();
 
-    const normalizedStatus = String(updatedWithdrawal.status || "").toLowerCase();
+    const normalizedStatus = String(
+      updatedWithdrawal.status || "",
+    ).toLowerCase();
     emitToUserAndAdmins(updatedWithdrawal.user_id, "withdrawal:updated", {
       type: "withdrawal",
       action: normalizedStatus === "approved" ? "approved" : "updated",
@@ -307,7 +313,7 @@ const getWithdrawalRequest = async (q) => {
     admin_note,
   } = q;
   console.log(q);
-  
+
   // Pagination fix: Convert strings to numbers to avoid NaN
   const page = Number(q.page) || 1;
   const limit = Number(q.limit) || 10;
