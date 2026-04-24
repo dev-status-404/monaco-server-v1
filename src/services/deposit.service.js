@@ -5,7 +5,13 @@ import WalletTransaction from "../models/wallet_transactions.model.js";
 import { pointsmateClient } from "../config/pointsmateClient.js";
 import { transactionService } from "./transaction.service.js";
 
-const depositFunds = async ({ userId, amountSats, type, memo, referenceId }) => {
+const depositFunds = async ({
+  userId,
+  amountSats,
+  type,
+  memo,
+  referenceId,
+}) => {
   const userContext = await transactionService.resolveUserContext(userId);
   if (!userContext) {
     throw createError(404, "user-or-wallet-not-found");
@@ -57,7 +63,7 @@ const depositFunds = async ({ userId, amountSats, type, memo, referenceId }) => 
     const provider = await pointsmateClient.createReceive({
       accountId: userContext.accountId,
       type: normalizedType.includes("on") ? "onchain" : "lightning",
-      amountSats: numericAmountSats,
+      amount: numericAmountSats,
       memo,
       referenceId: safeReferenceId,
     });

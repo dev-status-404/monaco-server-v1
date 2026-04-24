@@ -3,6 +3,10 @@ import createError from "http-errors";
 import config from "./env.js";
 
 const getAccountId = (accountId) => accountId || config.pointsMate.accountId;
+const normalizeAmount = ({ amount, amountSats }) => {
+  const value = amount ?? amountSats;
+  return value === undefined || value === null ? undefined : Number(value);
+};
 const getAuthorizationHeader = () => {
   const apiKey = String(config.pointsMate.apiKey || "").trim();
 
@@ -46,6 +50,7 @@ const request = async ({ method, url, data, params }) => {
 const createReceive = async ({
   accountId,
   type,
+  amount,
   amountSats,
   memo,
   referenceId,
@@ -56,7 +61,7 @@ const createReceive = async ({
     data: {
       accountId: getAccountId(accountId),
       type,
-      amountSats,
+      amount: normalizeAmount({ amount, amountSats }),
       memo,
       referenceId,
     },
@@ -65,6 +70,7 @@ const createReceive = async ({
 const sendFunds = async ({
   accountId,
   address,
+  amount,
   amountSats,
   memo,
   referenceId,
@@ -75,7 +81,7 @@ const sendFunds = async ({
     data: {
       accountId: getAccountId(accountId),
       address,
-      amountSats,
+      amount: normalizeAmount({ amount, amountSats }),
       memo,
       referenceId,
     },
@@ -90,6 +96,7 @@ const createSendLink = async ({ accountId }) =>
 
 const generatePointsCode = async ({
   accountId,
+  amount,
   amountSats,
   referenceId,
   memo,
@@ -99,7 +106,7 @@ const generatePointsCode = async ({
     url: "/pmext/api/v1/wallet/points-code/generate",
     data: {
       accountId: getAccountId(accountId),
-      amountSats,
+      amount: normalizeAmount({ amount, amountSats }),
       referenceId,
       memo,
     },

@@ -5,7 +5,13 @@ import WalletTransaction from "../models/wallet_transactions.model.js";
 import { pointsmateClient } from "../config/pointsmateClient.js";
 import { transactionService } from "./transaction.service.js";
 
-const requestWithdrawal = async ({ userId, address, amountSats, memo, referenceId }) => {
+const requestWithdrawal = async ({
+  userId,
+  address,
+  amountSats,
+  memo,
+  referenceId,
+}) => {
   const userContext = await transactionService.resolveUserContext(userId);
   if (!userContext) {
     throw createError(404, "user-or-wallet-not-found");
@@ -20,8 +26,12 @@ const requestWithdrawal = async ({ userId, address, amountSats, memo, referenceI
     throw createError(400, "invalid-amountSats");
   }
 
-  const balance = await pointsmateClient.getBalance({ accountId: userContext.accountId });
-  const spendable = Number(balance?.totalBalance?.totalSpendableBalance || balance?.balanceSats || 0);
+  const balance = await pointsmateClient.getBalance({
+    accountId: userContext.accountId,
+  });
+  const spendable = Number(
+    balance?.totalBalance?.totalSpendableBalance || balance?.balanceSats || 0,
+  );
   if (!Number.isFinite(spendable) || numericAmountSats > spendable) {
     throw createError(400, "insufficient-balance");
   }
@@ -62,7 +72,7 @@ const requestWithdrawal = async ({ userId, address, amountSats, memo, referenceI
     const provider = await pointsmateClient.sendFunds({
       accountId: userContext.accountId,
       address: String(address).trim(),
-      amountSats: numericAmountSats,
+      amount: numericAmountSats,
       memo,
       referenceId: safeReferenceId,
     });

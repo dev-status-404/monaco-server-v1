@@ -194,14 +194,15 @@ const updateDeposit = async (id, data) => {
         );
       }
 
-      const providerResponse = await walletIntegrationService.createReceiveRequest({
-        accountId: walletAccount.id,
-        type: updatedDeposit.provider,
-        amount: updatedDeposit.amount,
-        memo: `Deposit ${updatedDeposit.id}`,
-        referenceId: `deposit:${updatedDeposit.id}`,
-        idempotencyKey,
-      });
+      const providerResponse =
+        await walletIntegrationService.createReceiveRequest({
+          accountId: walletAccount.id,
+          type: updatedDeposit.provider,
+          amount: updatedDeposit.amount,
+          memo: `Deposit ${updatedDeposit.id}`,
+          referenceId: `deposit:${updatedDeposit.id}`,
+          idempotencyKey,
+        });
 
       await walletTransaction.update(
         {
@@ -262,7 +263,16 @@ const deleteDeposit = async (id) => {
   };
 };
 
-const depositFunds = async ({ userId, amount, amountSats, type, memo, referenceId, gameId, gameName }) => {
+const depositFunds = async ({
+  userId,
+  amount,
+  amountSats,
+  type,
+  memo,
+  referenceId,
+  gameId,
+  gameName,
+}) => {
   const userContext = await transactionService.resolveUserContext(userId);
   if (!userContext) {
     throw createError(404, "user-or-wallet-not-found");
@@ -313,7 +323,7 @@ const depositFunds = async ({ userId, amount, amountSats, type, memo, referenceI
     const provider = await pointsmateClient.createReceive({
       accountId: userContext.accountId,
       type: normalizedType.includes("on") ? "onchain" : "lightning",
-      amountSats: numericAmount,
+      amount: numericAmount,
       memo,
       referenceId: safeReferenceId,
     });

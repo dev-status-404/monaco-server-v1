@@ -32,7 +32,6 @@ const withdrawValidation = validate([
     .optional()
     .customSanitizer((v) => String(v))
     .isLength({ min: 3, max: 1024 }),
-  body("amountSats").optional().isInt({ min: 1 }),
   body("amount").optional().isFloat({ min: 0.01 }),
   body("method").optional().isString().isLength({ max: 50 }),
   body("currency").optional().isString().isLength({ max: 20 }),
@@ -53,13 +52,13 @@ const withdrawValidation = validate([
     const destination = String(
       payload?.address || payload?.destination || "",
     ).trim();
-    const amount = payload?.amountSats ?? payload?.amount;
+    const amount = payload?.amount;
 
     if (!userId) throw new Error("userId-or-user_id-required");
     if (!destination) throw new Error("address-or-destination-required");
     if (destination.length > 1024) throw new Error("destination-too-long");
     if (amount === undefined || amount === null || amount === "") {
-      throw new Error("amount-or-amountSats-required");
+      throw new Error("amount-required");
     }
 
     return true;
@@ -119,7 +118,6 @@ const requestWithdrawal = async (req, res) => {
     const data = await withdrawalRequestService.requestWithdrawal({
       userId: req.body.userId || req.body.user_id,
       address: req.body.address || req.body.destination,
-      amountSats: req.body.amountSats,
       amount: req.body.amount,
       memo: req.body.memo,
       referenceId: req.body.referenceId,

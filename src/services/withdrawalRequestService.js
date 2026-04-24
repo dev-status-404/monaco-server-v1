@@ -410,7 +410,6 @@ const bulkDeleteWithdrawalRequests = async (ids) => {
 const requestWithdrawal = async ({
   userId,
   address,
-  amountSats,
   amount,
   memo,
   method,
@@ -428,7 +427,7 @@ const requestWithdrawal = async ({
     throw createError(400, "address-required");
   }
 
-  const numericAmount = Number(amountSats ?? amount);
+  const numericAmount = Number(amount);
   if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
     throw createError(400, "invalid-amount");
   }
