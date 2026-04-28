@@ -54,6 +54,7 @@ const createReceive = async ({
   amountSats,
   memo,
   referenceId,
+  webhookUrl,
 }) =>
   request({
     method: "POST",
@@ -61,9 +62,12 @@ const createReceive = async ({
     data: {
       accountId: getAccountId(accountId),
       type,
-      amount: normalizeAmount({ amount, amountSats }),
+      amount: amount,
       memo,
       referenceId,
+      ...(webhookUrl || config.pointsMate.receiveWebhookUrl
+        ? { webhookUrl: webhookUrl || config.pointsMate.receiveWebhookUrl }
+        : {}),
     },
   });
 
@@ -81,7 +85,7 @@ const sendFunds = async ({
     data: {
       accountId: getAccountId(accountId),
       address,
-      amount: normalizeAmount({ amount, amountSats }),
+      amount:amount,
       memo,
       referenceId,
     },
@@ -106,7 +110,7 @@ const generatePointsCode = async ({
     url: "/pmext/api/v1/wallet/points-code/generate",
     data: {
       accountId: getAccountId(accountId),
-      amount: normalizeAmount({ amount, amountSats }),
+      amount:amount,
       referenceId,
       memo,
     },

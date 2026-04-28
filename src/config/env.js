@@ -66,6 +66,9 @@ const envVarsSchema = Joi.object()
     POINTSMATE_WEBHOOK_SECRET: Joi.string().description(
       "PointsMate webhook signature secret",
     ),
+    POINTSMATE_RECEIVE_WEBHOOK_URL: Joi.string()
+      .uri()
+      .description("Public receive webhook URL for PointsMate callbacks"),
     POINTSMATE_TIMEOUT_MS: Joi.number()
       .default(15000)
       .description("PointsMate API request timeout in milliseconds"),
@@ -151,6 +154,7 @@ const config = {
     apiKey: envVars.POINTSMATE_API_KEY,
     accountId: envVars.POINTSMATE_ACCOUNT_ID,
     webhookSecret: envVars.POINTSMATE_WEBHOOK_SECRET,
+    receiveWebhookUrl: envVars.POINTSMATE_RECEIVE_WEBHOOK_URL,
     timeoutMs: envVars.POINTSMATE_TIMEOUT_MS,
   },
 

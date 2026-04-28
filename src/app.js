@@ -55,6 +55,8 @@ const corsOptions = {
     "Authorization",
     "X-recaptcha-token",
     "x-recaptcha-token",
+    "X-Webhook-Hash",
+    "x-webhook-hash",
   ],
 };
 
@@ -62,6 +64,7 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 // Webhooks are mounted before global JSON middleware so they can be processed independently.
+app.use("/webhook", express.json({ limit: "2mb" }), webhookRoutes);
 app.use(`${globalPrefix}/webhooks`, express.json({ limit: "2mb" }), webhookRoutes);
 
 app.use(express.json());

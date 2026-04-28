@@ -54,7 +54,7 @@ const dbConnection = async () => {
     if (config.env === 'development') {
       // In development, you might want to sync tables
       // For CockroachDB, use { force: false } to avoid dropping tables
-       await sequelize.sync({ force: false });
+      //  await sequelize.sync({ force: false });
     } else {
       // await sequelize.sync({ force: false });
     }
