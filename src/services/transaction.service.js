@@ -27,9 +27,11 @@ const formatWalletTransaction = (tx) => {
     magicLink: meta.magicLink || null,
     magic_link_expires_at: meta.magicLinkExpiresAt || null,
     magicLinkExpiresAt: meta.magicLinkExpiresAt || null,
-    amount: meta.amount || plain.amount || null,
+    // Prefer USD amount so the UI always displays dollars
+    amount: meta.amountUsd || meta.amount || plain.amount || null,
     amount_usd: meta.amountUsd || null,
     amountUsd: meta.amountUsd || null,
+    amountSats: meta.amountSats || null,
     provider_transaction_id:
       meta.providerTransactionId || meta.providerResponse?.transactionId || null,
     providerTransactionId:

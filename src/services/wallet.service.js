@@ -12,7 +12,9 @@ const getBalanceByUser = async (userId) => {
     walletId: providerBalance.walletId,
     balanceUsd: providerBalance.balanceUsd,
     balanceSats: providerBalance.balanceSats,
-    spendable: providerBalance?.totalBalance?.totalSpendableBalance,
+    // Always expose spendable in USD so the UI can display it as dollars
+    spendable: providerBalance.balanceUsd ?? 0,
+    spendableSats: providerBalance?.totalBalance?.totalSpendableBalance,
     locked: providerBalance?.totalBalance?.totalLockedBalance,
   };
 };

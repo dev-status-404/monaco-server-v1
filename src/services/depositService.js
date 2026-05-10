@@ -304,7 +304,8 @@ const depositFunds = async ({
         user_id: userId,
         type: "deposit",
         direction: "credit",
-        amount: (numericAmount / 100000000).toFixed(8),
+        // Store the user-entered USD amount directly — not a BTC/sats conversion
+        amount: numericAmount,
         status: "pending",
         api_status: "pending",
         reference_type: "pointsmate_receive",
@@ -313,7 +314,7 @@ const depositFunds = async ({
         idempotency_key: safeReferenceId,
         meta: {
           memo,
-          amount: String(numericAmount),
+          amountUsd: String(numericAmount),
           amountSats: String(numericAmount),
         },
       },
@@ -338,8 +339,8 @@ const depositFunds = async ({
           address: provider.address,
           magicLink: provider.magicLink,
           magicLinkExpiresAt: provider.magicLinkExpiresAt,
-          amountUsd: provider.amountUsd,
-          amount: provider.amountSats || String(numericAmount),
+          // Prefer USD amount from provider; fall back to what user entered
+          amountUsd: provider.amountUsd ?? String(numericAmount),
           amountSats: provider.amountSats || String(numericAmount),
         },
       },
@@ -383,9 +384,11 @@ const depositFunds = async ({
       magicLink: provider.magicLink,
       magic_link_expires_at: provider.magicLinkExpiresAt,
       magicLinkExpiresAt: provider.magicLinkExpiresAt,
-      amount: provider.amountSats || String(numericAmount),
-      amount_usd: provider.amountUsd,
-      amountUsd: provider.amountUsd,
+      // Return USD amount so the UI can display dollars
+      amount: provider.amountUsd ?? String(numericAmount),
+      amount_usd: provider.amountUsd ?? String(numericAmount),
+      amountUsd: provider.amountUsd ?? String(numericAmount),
+      amountSats: provider.amountSats,
       status: "PENDING",
     };
   } catch (error) {
