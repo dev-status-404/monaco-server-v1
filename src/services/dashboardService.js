@@ -2,29 +2,13 @@ import { Op, fn, col } from "sequelize";
 import createError from "http-errors";
 
 import User from "../models/user.model.js";
-import Deposit from "../models/deposits.model.js";
-import WithdrawlsRequest from "../models/withdrawls_requests.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import GameRequest from "../models/games_request.model.js";
 import GameCredential from "../models/game_credentials.model.js";
 import Game from "../models/games.model.js";
 import Reward from "../models/rewards.model.js"; // only used for user dashboard
+import WithdrawalRequest from "../models/withdrawls_requests.model.js";
 
-const withdrawalDashboardAttributes = [
-  "id",
-  "user_id",
-  "game_id",
-  "game_name",
-  "amount",
-  "currency",
-  "method",
-  "api_status",
-  "status",
-  "reviewed_by_admin_id",
-  "admin_note",
-  "createdAt",
-  "updatedAt",
-];
 /* =========================
    Helpers
 ========================= */
@@ -103,14 +87,14 @@ const getRangeWindow = (q) => {
 const listDaysBetween = (start, end) => {
   const days = [];
   const d = new Date(start);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
 
   const e = new Date(end);
-  e.setHours(0, 0, 0, 0);
+  e.setUTCHours(0, 0, 0, 0);
 
   while (d <= e) {
     days.push(toISODate(d));
-    d.setDate(d.getDate() + 1);
+    d.setUTCDate(d.getUTCDate() + 1);
   }
   return days;
 };
@@ -130,18 +114,36 @@ const fillCountsByLabels = (labels, counts, fullLabels) => {
 };
 
 /* =========================
-   Charts: group by day count
+   Charts: group by day count or sum
 ========================= */
 const groupByDayCount = async (Model, where) => {
   const dayExpr = fn("DATE", col("createdAt")); // MySQL/SQLite
-  // Postgres alternative:
-  // const dayExpr = fn("date_trunc", "day", col("createdAt"));
 
   const rows = await Model.findAll({
     where,
     attributes: [
       [dayExpr, "day"],
       [fn("COUNT", col("id")), "count"],
+    ],
+    group: [dayExpr],
+    order: [[dayExpr, "ASC"]],
+    raw: true,
+  });
+
+  return {
+    labels: rows.map((r) => String(r.day).slice(0, 10)),
+    counts: rows.map((r) => Number(r.count ?? 0)),
+  };
+};
+
+const groupByDaySum = async (Model, field, where) => {
+  const dayExpr = fn("DATE", col("createdAt"));
+
+  const rows = await Model.findAll({
+    where,
+    attributes: [
+      [dayExpr, "day"],
+      [fn("SUM", col(field)), "count"],
     ],
     group: [dayExpr],
     order: [[dayExpr, "ASC"]],
@@ -248,18 +250,31 @@ const AdminDashboard = async (q) => {
 
   // where clauses
   const usersWhere = { role: "user", ...dateWhere };
-  const depositsWhere = { ...dateWhere };
-  const withdrawsWhere = { ...dateWhere };
   const transactionsWhere = { ...dateWhere };
   const gameRequestsWhere = { ...dateWhere };
 
   // optional game filter
   const gameId = normalizeUuidLike(q.game_id ?? q.gameId);
   if (gameId) {
-    depositsWhere.game_id = gameId;
-    withdrawsWhere.game_id = gameId;
+    transactionsWhere.game_id = gameId;
     gameRequestsWhere.game_id = gameId;
   }
+
+  // wallet_transaction scoped views (date-filtered, for pages + charts)
+  const txDepositsWhere = {
+    type: "deposit",
+    direction: "credit",
+    status: "completed",
+    ...dateWhere,
+    ...(gameId ? { game_id: gameId } : {}),
+  };
+  const txWithdrawsWhere = {
+    type: "withdrawal",
+    direction: "debit",
+    status: "completed",
+    ...dateWhere,
+    ...(gameId ? { game_id: gameId } : {}),
+  };
 
   // pagination
   const usrPg = paginate(q, "users");
@@ -271,8 +286,8 @@ const AdminDashboard = async (q) => {
   const [
     // totals
     totalUsers,
-    totalDeposits,
-    totalWithdraws,
+    adminTotalDepositsRaw,
+    adminTotalWithdrawsRaw,
     totalTransactions,
     totalGameRequests,
 
@@ -295,10 +310,13 @@ const AdminDashboard = async (q) => {
   ] = await Promise.all([
     // totals
     User.count({ where: { role: "user" } }),
-    safeSum(Deposit, "amount", depositsWhere),
-    safeSum(WithdrawlsRequest, "amount", withdrawsWhere),
+    // All-time total deposits — completed only from wallet_transactions
+    safeSum(WalletTransaction, "amount", { type: "deposit", direction: "credit", status: "completed" }),
+    // All-time total withdrawals — pending + completed (wallet_transactions stay "pending" until PointsMate webhook confirms)
+    safeSum(WalletTransaction, "amount", { type: "withdrawal", direction: "debit", status: { [Op.in]: ["pending", "completed"] } }),
     WalletTransaction.count({ where: transactionsWhere }),
-    GameRequest.count({ where: gameRequestsWhere }),
+    // All-time total game requests (no date filter so admin always sees the real total)
+    GameRequest.count({}),
 
     // pages
     User.findAndCountAll({
@@ -318,31 +336,24 @@ const AdminDashboard = async (q) => {
       ],
     }),
 
-    Deposit.findAndCountAll({
-      where: depositsWhere,
+    WalletTransaction.findAndCountAll({
+      where: txDepositsWhere,
       limit: depPg.limit,
       offset: depPg.offset,
       order: [[depPg.sortBy, depPg.sortDir]],
       include: [
-        {
-          association: "user",
-          attributes: ["id", "email", "firstName", "lastName"],
-        },
+        { association: "user", attributes: ["id", "email", "firstName", "lastName"] },
         { association: "game", attributes: ["id", "name"], required: false },
       ],
     }),
 
-    WithdrawlsRequest.findAndCountAll({
-      where: withdrawsWhere,
+    WalletTransaction.findAndCountAll({
+      where: txWithdrawsWhere,
       limit: wdrPg.limit,
       offset: wdrPg.offset,
       order: [[wdrPg.sortBy, wdrPg.sortDir]],
-      attributes: withdrawalDashboardAttributes,
       include: [
-        {
-          association: "user",
-          attributes: ["id", "email", "firstName", "lastName"],
-        },
+        { association: "user", attributes: ["id", "email", "firstName", "lastName"] },
         { association: "game", attributes: ["id", "name"], required: false },
       ],
     }),
@@ -375,8 +386,9 @@ const AdminDashboard = async (q) => {
 
     // charts
     groupByDayCount(User, usersWhere),
-    groupByDayCount(Deposit, depositsWhere),
-    groupByDayCount(WithdrawlsRequest, withdrawsWhere),
+    groupByDaySum(WalletTransaction, "amount", txDepositsWhere),
+    // withdrawals chart: query WithdrawalRequest so pending/requested show up before admin approval
+    groupByDaySum(WithdrawalRequest, "amount", { createdAt: { [Op.gte]: start } }),
     groupByDayCount(WalletTransaction, transactionsWhere),
     groupByDayCount(GameRequest, gameRequestsWhere),
 
@@ -434,14 +446,20 @@ const AdminDashboard = async (q) => {
     ),
   };
 
+  // Override card totals: admin should see all-time counts regardless of range filter.
+  // withdraws: sourced from WithdrawalRequest (includes "requested" status before wallet_transaction exists)
+  // gameRequests: all-time count so recently-created requests always appear
+  insights.withdraws.total = adminTotalWithdrawsRaw;
+  insights.gameRequests.total = totalGameRequests;
+
   return {
     scope: "admin",
     filter: { range: String(q.range ?? "1w"), game_id: gameId ?? null },
 
     totals: {
       totalUsers,
-      totalDeposits,
-      totalWithdraws,
+      totalDeposits: adminTotalDepositsRaw,
+      totalWithdraws: adminTotalWithdrawsRaw,
       totalTransactions,
       totalGameRequests,
     },
@@ -503,57 +521,57 @@ const UserDashboard = async (q) => {
   const game_id = normalizeUuidLike(q.game_id);
   if (!user_id) throw createError(400, "user_id-is-required-for-user-dashboard");
 
-  const depositsWhere = { user_id };
-  const withdrawsWhere = { user_id };
   const rewardsWhere = { user_id };
+  // All wallet_transactions scoped to this user
+  const txWhere = { user_id };
 
   // optional game filter for user dashboard
   if (game_id) {
-    depositsWhere.game_id = game_id;
-    withdrawsWhere.game_id = game_id;
+    txWhere.game_id = game_id;
   }
+
+  // Type-filtered views — single source of truth
+  const txDepositsWhere = { ...txWhere, type: "deposit", direction: "credit" };
+  const txWithdrawsWhere = { ...txWhere, type: "withdrawal", direction: "debit" };
 
   const depPg = paginate(q, "deposits");
   const wdrPg = paginate(q, "withdraws");
   const rwdPg = paginate(q, "rewards");
+  const txPg  = paginate(q, "transactions");
 
   const [
-    totalDeposits,
-    totalWithdraws,
+    userTotalCredits,
+    userTotalDebits,
     totalRewards,
     depositsPage,
     withdrawsPage,
     rewardsPage,
+    transactionsPage,
   ] = await Promise.all([
-    safeSum(Deposit, "amount", depositsWhere),
-    safeSum(WithdrawlsRequest, "amount", withdrawsWhere),
+    // Net balance: sum of all completed credits for this user
+    safeSum(WalletTransaction, "amount", { user_id, direction: "credit", status: "completed" }),
+    // Sum of all completed debits for this user
+    safeSum(WalletTransaction, "amount", { user_id, direction: "debit", status: "completed" }),
     safeSum(Reward, "amount", rewardsWhere),
 
-    Deposit.findAndCountAll({
-      where: depositsWhere,
+    WalletTransaction.findAndCountAll({
+      where: txDepositsWhere,
       limit: depPg.limit,
       offset: depPg.offset,
       order: [[depPg.sortBy, depPg.sortDir]],
       include: [
-        {
-          association: "user",
-          attributes: ["id", "email", "firstName", "lastName"],
-        },
+        { association: "user", attributes: ["id", "email", "firstName", "lastName"] },
         { association: "game", attributes: ["id", "name"], required: false },
       ],
     }),
 
-    WithdrawlsRequest.findAndCountAll({
-      where: withdrawsWhere,
+    WalletTransaction.findAndCountAll({
+      where: txWithdrawsWhere,
       limit: wdrPg.limit,
       offset: wdrPg.offset,
       order: [[wdrPg.sortBy, wdrPg.sortDir]],
-      attributes: withdrawalDashboardAttributes,
       include: [
-        {
-          association: "user",
-          attributes: ["id", "email", "firstName", "lastName"],
-        },
+        { association: "user", attributes: ["id", "email", "firstName", "lastName"] },
         { association: "game", attributes: ["id", "name"], required: false },
       ],
     }),
@@ -564,16 +582,46 @@ const UserDashboard = async (q) => {
       offset: rwdPg.offset,
       order: [[rwdPg.sortBy, rwdPg.sortDir]],
     }),
+
+    // Wallet transactions ledger — credit = deposits, debit = withdrawals
+    WalletTransaction.findAndCountAll({
+      where: txWhere,
+      limit: txPg.limit,
+      offset: txPg.offset,
+      order: [[txPg.sortBy, txPg.sortDir]],
+      attributes: [
+        "id",
+        "type",
+        "direction",
+        "amount",
+        "status",
+        "api_status",
+        "reference_type",
+        "reference_id",
+        "game_id",
+        "game_name",
+        "user_id",
+        "meta",
+        "createdAt",
+        "updatedAt",
+      ],
+    }),
   ]);
 
   return {
     scope: "user",
-    totals: { totalDeposits, totalWithdraws, totalRewards },
+    totals: {
+      // Net remaining balance = total credited − total debited from wallet_transactions
+      totalDeposits: Math.max(0, userTotalCredits - userTotalDebits),
+      totalWithdraws: userTotalDebits,
+      totalRewards,
+    },
     filter: { game_id: game_id ?? null },
     pages: {
-      deposits: packPage(depositsPage, depPg.page, depPg.limit),
-      withdraws: packPage(withdrawsPage, wdrPg.page, wdrPg.limit),
-      rewards: packPage(rewardsPage, rwdPg.page, rwdPg.limit),
+      deposits:     packPage(depositsPage,     depPg.page, depPg.limit),
+      withdraws:    packPage(withdrawsPage,    wdrPg.page, wdrPg.limit),
+      rewards:      packPage(rewardsPage,      rwdPg.page, rwdPg.limit),
+      transactions: packPage(transactionsPage, txPg.page,  txPg.limit),
     },
     message: "dashboard-found",
     code: 200,

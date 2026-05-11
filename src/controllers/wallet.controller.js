@@ -98,6 +98,15 @@ const listValidation = validate([
   query("limit").optional().isInt({ min: 1, max: 100 }),
 ]);
 
+const listAllValidation = validate([
+  query("type").optional().isIn(["deposit", "withdrawal"]),
+  query("status")
+    .optional()
+    .isIn(["pending", "completed", "failed", "canceled"]),
+  query("page").optional().isInt({ min: 1 }),
+  query("limit").optional().isInt({ min: 1, max: 100 }),
+]);
+
 const depositFunds = async (req, res) => {
   try {
     const data = await depositService.depositFunds(req.body);
@@ -215,6 +224,27 @@ const getTransactionDetail = async (req, res) => {
   }
 };
 
+const listAllTransactions = async (req, res) => {
+  try {
+    const data = await walletServiceV2.listTransactionsByUser({
+      userId: undefined,
+      type: req.query.type,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(error?.statusCode || 400).json({
+      success: false,
+      error: {
+        code: error?.statusCode || 400,
+        message: error?.message || "transactions-fetch-failed",
+      },
+    });
+  }
+};
+
 export const walletController = {
   depositValidation,
   withdrawValidation,
@@ -222,10 +252,12 @@ export const walletController = {
   balanceValidation,
   transactionDetailValidation,
   listValidation,
+  listAllValidation,
   depositFunds,
   requestWithdrawal,
   approveWithdrawal,
   getBalance,
   listTransactions,
+  listAllTransactions,
   getTransactionDetail,
 };

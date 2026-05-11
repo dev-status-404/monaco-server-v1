@@ -138,6 +138,7 @@ const getGame = async (q) => {
   const { rows: gamesrequest, count } = await GameRequest.findAndCountAll({
     where,
     offset,
+    order: [["createdAt", "DESC"]],
     include: [
       {
         association: "user",

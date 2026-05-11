@@ -128,9 +128,23 @@ const updateWithdrawalRequest = async (data) => {
     }
 
     const nextStatus = data.status ?? existingWithdrawal.status;
-    const shouldTrigger =
-      String(existingWithdrawal.status).toLowerCase() !== "approved" &&
-      String(nextStatus).toLowerCase() === "approved";
+    const prevStatus = String(existingWithdrawal.status).toLowerCase();
+    const normalizedNext = String(nextStatus).toLowerCase();
+
+    const shouldTriggerApproval =
+      prevStatus !== "approved" && normalizedNext === "approved";
+
+    // Prevent re-approval if already approved
+    if (prevStatus === "approved" && normalizedNext === "approved") {
+      throw createError(400, "withdrawal-already-approved");
+    }
+
+    // Prevent approving a rejected withdrawal
+    if (prevStatus === "rejected" && normalizedNext === "approved") {
+      throw createError(400, "withdrawal-already-rejected");
+    }
+
+    const shouldTrigger = shouldTriggerApproval;
 
     const [updatedCount] = await WithdrawalRequest.update(payload, {
       where: { id: data.id },
@@ -223,7 +237,7 @@ const updateWithdrawalRequest = async (data) => {
 
       await walletTransaction.update(
         {
-          status: "pending",
+          status: providerResponse?.isSucceed === false ? "failed" : "completed",
           api_status:
             providerResponse?.isSucceed === false ? "failed" : "initiated",
           meta: {
@@ -234,6 +248,60 @@ const updateWithdrawalRequest = async (data) => {
         },
         { transaction: tx },
       );
+
+      // Deduct the amount from the user's wallet account balance on approval
+      if (providerResponse?.isSucceed !== false) {
+        await userWalletAccount.decrement("balance", {
+          by: Number(updatedWithdrawal.amount),
+          transaction: tx,
+        });
+      }
+    }
+
+    // Write a canceled wallet transaction record for rejections so there is
+    // always an audit trail — no balance change occurs for rejected requests.
+    if (normalizedNext === "rejected" && prevStatus !== "rejected") {
+      const userWalletAccount = await ensureWalletAccount({
+        userId: updatedWithdrawal.user_id,
+        transaction: tx,
+      });
+
+      const rejectionKey = walletIntegrationService.buildIdempotencyKey({
+        entityType: "withdrawal",
+        entityId: updatedWithdrawal.id,
+        status: "rejected",
+      });
+
+      const exists = await WalletTransaction.findOne({
+        where: { idempotency_key: rejectionKey },
+        transaction: tx,
+      });
+
+      if (!exists) {
+        await WalletTransaction.create(
+          {
+            wallet_account_id: userWalletAccount.id,
+            type: "withdrawal",
+            direction: "debit",
+            amount: updatedWithdrawal.amount,
+            status: "canceled",
+            api_status: "rejected",
+            reference_type: "withdrawal",
+            reference_id: updatedWithdrawal.id,
+            user_id: updatedWithdrawal.user_id,
+            game_id: updatedWithdrawal.game_id,
+            game_name: updatedWithdrawal.game_name,
+            idempotency_key: rejectionKey,
+            meta: {
+              provider: "PointsMate",
+              stage: "rejection",
+              adminNote: data.admin_note || null,
+              reviewedBy: data.reviewed_by_admin_id || null,
+            },
+          },
+          { transaction: tx },
+        );
+      }
     }
 
     await tx.commit();
@@ -298,7 +366,7 @@ const updateWithdrawalRequest = async (data) => {
   }
 };
 
-const getWithdrawalRequest = async (q) => {
+const getWithdrawalRequest = async (q, requestingUser) => {
   const {
     user_id,
     game_id,
@@ -320,7 +388,18 @@ const getWithdrawalRequest = async (q) => {
   const offset = (page - 1) * limit;
 
   let where = {};
-  if (user_id) where.user_id = user_id;
+
+  // ── Security: scope to the requesting user unless they are admin ────────
+  const isAdmin = String(requestingUser?.role ?? "").toLowerCase() === "admin";
+  if (!isAdmin) {
+    // Non-admin users can ONLY see their own withdrawal requests
+    where.user_id = requestingUser?.id;
+  } else if (user_id) {
+    // Admins may optionally filter by a specific user
+    where.user_id = user_id;
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
   if (game_id) where.game_id = game_id;
   if (id) where.id = id;
   if (amount) where.amount = amount;
@@ -334,6 +413,7 @@ const getWithdrawalRequest = async (q) => {
   const { rows: withdrawalrequests, count } =
     await WithdrawalRequest.findAndCountAll({
       where,
+      order: [["createdAt", "DESC"]],
       offset: offset,
       limit: limit,
       attributes: [

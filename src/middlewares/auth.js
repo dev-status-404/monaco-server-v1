@@ -22,7 +22,8 @@ const auth = (allowedRoles = [], options = {}) => {
           ? authHeader.split(" ")[1]
           : null;
 
-      const cookieToken = req.cookies?.accessToken;
+      // Client stores the token under 'access_token' (js-cookie); support both names
+      const cookieToken = req.cookies?.access_token || req.cookies?.accessToken;
 
       const token = headerToken || cookieToken;
 

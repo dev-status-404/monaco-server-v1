@@ -4,6 +4,9 @@ import { withdrawalRequestController } from "../controllers/withdrawalRequestCon
 
 const router = express.Router();
 
+// All withdrawal routes require authentication
+router.use(auth());
+
 // Withdrawal Request routes
 router.post("/create", withdrawalRequestController.createWithdrawalRequest);
 router.put("/update", withdrawalRequestController.updateWithdrawalRequest);

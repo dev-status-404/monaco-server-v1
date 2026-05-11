@@ -62,7 +62,8 @@ const resolveUserContext = async (userId) => {
 };
 
 const listTransactions = async ({ userId, type, status, page = 1, limit = 20 }) => {
-  const where = { user_id: userId };
+  const where = {};
+  if (userId) where.user_id = userId;
 
   if (type) where.type = String(type).toLowerCase();
   if (status) where.status = String(status).toLowerCase();

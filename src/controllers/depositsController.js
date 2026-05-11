@@ -80,9 +80,35 @@ const deleteDeposit = async (req, res) => {
   }
 };
 
+const getDepositedGames = async (req, res) => {
+  try {
+    // Prefer the authenticated user's own ID for security; allow explicit override only for admins
+    const userId = req.user?.role === "admin"
+      ? (req.query.user_id ?? req.user?.id)
+      : req.user?.id;
+
+    const response = await depositService.getDepositedGames(userId);
+
+    return res.status(response.code).json({
+      code: response.code,
+      success: true,
+      message: response.message,
+      data: response.data ?? null,
+    });
+  } catch (error) {
+    return res.status(error?.statusCode || 400).json({
+      code: error?.statusCode || 400,
+      success: false,
+      message: error.message,
+      data: null,
+    });
+  }
+};
+
 export const depositsController = {
   createDeposit,
   getDeposits,
   updateDeposit,
   deleteDeposit,
+  getDepositedGames,
 };

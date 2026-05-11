@@ -11,5 +11,7 @@ router.post("/create", depositsController.createDeposit);
 router.get("/get", depositsController.getDeposits);
 router.put("/update/:id", depositsController.updateDeposit);
 router.delete("/delete/:id", depositsController.deleteDeposit);
+// Returns distinct games the authenticated user has made confirmed deposits against
+router.get("/my-games", auth(), depositsController.getDepositedGames);
 
 export default router;

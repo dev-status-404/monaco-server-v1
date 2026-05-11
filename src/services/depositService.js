@@ -1,5 +1,6 @@
 import createError from "http-errors";
 import { v4 as uuidv4 } from "uuid";
+import { Op, fn, col, literal } from "sequelize";
 import Deposit from "../models/deposits.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import WalletAccount from "../models/wallet_account.model.js";
@@ -215,6 +216,12 @@ const updateDeposit = async (id, data) => {
         },
         { transaction: tx },
       );
+
+      // Credit the user's wallet account balance
+      await walletAccount.increment("balance", {
+        by: Number(updatedDeposit.amount),
+        transaction: tx,
+      });
     }
 
     await tx.commit();
@@ -397,10 +404,59 @@ const depositFunds = async ({
   }
 };
 
+/**
+ * Returns only games where the user's net balance (total credits - total debits)
+ * is > 0, i.e. they have deposited at least $1 more than they have withdrawn.
+ */
+const getDepositedGames = async (userId) => {
+  if (!userId) throw createError(400, "user_id-required");
+
+  // Fetch all relevant wallet_transactions for this user that have a game_id:
+  // - credits: only "completed" (deposit actually landed)
+  // - debits:  "pending" or "completed" (withdrawal initiated or settled);
+  //            "failed" and "canceled" are excluded so rejected withdrawals don't reduce balance
+  const rows = await WalletTransaction.findAll({
+    where: {
+      user_id: userId,
+      game_id: { [Op.ne]: null },
+      [Op.or]: [
+        { direction: "credit", status: "completed" },
+        { direction: "debit", status: { [Op.in]: ["pending", "completed"] } },
+      ],
+    },
+    attributes: ["game_id", "game_name", "direction", "amount"],
+    raw: true,
+  });
+
+  // Compute net balance per game: sum(credits) - sum(debits)
+  const gameMap = new Map();
+  for (const row of rows) {
+    const gid = row.game_id;
+    if (!gameMap.has(gid)) {
+      gameMap.set(gid, { id: gid, name: row.game_name ?? gid, net: 0 });
+    }
+    const entry = gameMap.get(gid);
+    const amt = Number(row.amount) || 0;
+    if (row.direction === "credit") {
+      entry.net += amt;
+    } else {
+      entry.net -= amt;
+    }
+  }
+
+  // Only return games where net remaining balance is at least $1
+  const games = Array.from(gameMap.values())
+    .filter((g) => g.net >= 1)
+    .map(({ id, name }) => ({ id, name }));
+
+  return { success: true, data: games, message: "deposited-games-retrieved", code: 200 };
+};
+
 export const depositService = {
   createDeposit,
   getDeposits,
   updateDeposit,
   deleteDeposit,
   depositFunds,
+  getDepositedGames,
 };

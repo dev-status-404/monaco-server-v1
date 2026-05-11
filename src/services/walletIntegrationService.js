@@ -2,7 +2,7 @@ import axios from "axios";
 import createError from "http-errors";
 import config from "../config/env.js";
 
-const terminalDepositStatuses = new Set(["confirmed", "approved"]);
+const terminalDepositStatuses = new Set(["confirmed", "approved", "completed"]);
 
 const normalizeReceiveType = (rawType = "") => {
   const value = String(rawType || "")

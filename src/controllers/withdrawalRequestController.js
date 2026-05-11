@@ -46,8 +46,10 @@ const updateWithdrawalRequest = async (req, res) => {
 
 const getWithdrawalRequest = async (req, res) => {
   try {
+    // GET requests carry params in query string, not body
     const response = await withdrawalRequestService.getWithdrawalRequest(
-      req.body,
+      req.query,
+      req.user,
     );
 
     return res.status(response.code).json({

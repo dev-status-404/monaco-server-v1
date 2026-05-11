@@ -1,21 +1,41 @@
 import createError from "http-errors";
-import { pointsmateClient } from "../config/pointsmateClient.js";
 import { transactionService } from "./transaction.service.js";
+import WalletAccount from "../models/wallet_account.model.js";
+import WalletTransaction from "../models/wallet_transactions.model.js";
 
 const getBalanceByUser = async (userId) => {
-  const userContext = await transactionService.resolveUserContext(userId);
-  if (!userContext) throw createError(404, "user-or-wallet-not-found");
+  // Sum all completed credit deposit transactions for this user — this is the
+  // authoritative view of how much the user has actually deposited and had
+  // credited to their account. No PointsMate call needed.
+  const txRows = await WalletTransaction.findAll({
+    where: {
+      user_id: userId,
+      type: "deposit",
+      direction: "credit",
+      status: "completed",
+    },
+    attributes: ["amount"],
+  });
 
-  const providerBalance = await pointsmateClient.getBalance({ accountId: userContext.accountId });
+  const totalDeposited = txRows.reduce(
+    (sum, tx) => sum + Number(tx.amount ?? 0),
+    0,
+  );
+
+  // wallet_account.balance is kept in sync by the deposit confirmation flow
+  // but we prefer the transaction sum as it is always accurate even if the
+  // account row hasn't been updated yet.
+  const walletAccount = await WalletAccount.findOne({ where: { user_id: userId } });
+  const accountBalance = Number(walletAccount?.balance ?? 0);
+
+  const spendable = totalDeposited > 0 ? totalDeposited : accountBalance;
 
   return {
-    walletId: providerBalance.walletId,
-    balanceUsd: providerBalance.balanceUsd,
-    balanceSats: providerBalance.balanceSats,
-    // Always expose spendable in USD so the UI can display it as dollars
-    spendable: providerBalance.balanceUsd ?? 0,
-    spendableSats: providerBalance?.totalBalance?.totalSpendableBalance,
-    locked: providerBalance?.totalBalance?.totalLockedBalance,
+    spendable,
+    totalDeposited,
+    balance: spendable,
+    currency: walletAccount?.currency ?? "USD",
+    walletStatus: walletAccount?.status ?? "active",
   };
 };
 

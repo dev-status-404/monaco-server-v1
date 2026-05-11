@@ -33,6 +33,12 @@ router.get(
 );
 
 router.get(
+  "/transactions",
+  walletController.listAllValidation,
+  walletController.listAllTransactions,
+);
+
+router.get(
   "/transactions/:userId",
   // auth(["admin", "user"]),
   walletController.listValidation,
