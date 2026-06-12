@@ -73,6 +73,43 @@ const envVarsSchema = Joi.object()
       .default(15000)
       .description("PointsMate API request timeout in milliseconds"),
 
+    // Tierlock
+    TIERLOCK_ENABLED: Joi.boolean()
+      .default(true)
+      .description("Enable Tierlock checkout and payout integration"),
+    TIERLOCK_BASE_URL: Joi.string()
+      .uri()
+      .default("https://api.tierlock.com")
+      .description("Tierlock API base URL"),
+    TIERLOCK_MERCHANT_ID: Joi.string().description("Tierlock merchant ID"),
+    TIERLOCK_MERCHANT_SECRET: Joi.string().description(
+      "Tierlock merchant secret",
+    ),
+    TIERLOCK_WEBHOOK_SECRET: Joi.string().description(
+      "Tierlock webhook signature secret",
+    ),
+    TIERLOCK_PAYMENT_WEBHOOK_SECRET: Joi.string().description(
+      "Tierlock standard payment webhook signature secret",
+    ),
+    TIERLOCK_PAYOUT_WEBHOOK_SECRET: Joi.string().description(
+      "Tierlock payout webhook signature secret",
+    ),
+    TIERLOCK_DISPLAY_NAME: Joi.string()
+      .default("Monaco Game Room")
+      .description("Display name shown on Tierlock checkout"),
+    TIERLOCK_STANDARD_WEBHOOK_URL: Joi.string()
+      .uri()
+      .description("Public Tierlock standard payment webhook URL"),
+    TIERLOCK_PAYOUT_WEBHOOK_URL: Joi.string()
+      .uri()
+      .description("Public Tierlock payout webhook URL"),
+    TIERLOCK_PAYOUT_PATH: Joi.string()
+      .default("/api/auth/payout/sendpaymentlinkpayoutforexternal")
+      .description("Tierlock payout API path"),
+    TIERLOCK_TIMEOUT_MS: Joi.number()
+      .default(15000)
+      .description("Tierlock API request timeout in milliseconds"),
+
     // Redis / Queue
     REDIS_URL: Joi.string().description("Redis connection URL"),
   })
@@ -156,6 +193,25 @@ const config = {
     webhookSecret: envVars.POINTSMATE_WEBHOOK_SECRET,
     receiveWebhookUrl: envVars.POINTSMATE_RECEIVE_WEBHOOK_URL,
     timeoutMs: envVars.POINTSMATE_TIMEOUT_MS,
+  },
+
+  tierlock: {
+    enabled: envVars.TIERLOCK_ENABLED,
+    baseUrl: envVars.TIERLOCK_BASE_URL,
+    merchantId: envVars.TIERLOCK_MERCHANT_ID,
+    merchantSecret: envVars.TIERLOCK_MERCHANT_SECRET,
+    webhookSecret: envVars.TIERLOCK_WEBHOOK_SECRET,
+    paymentWebhookSecret:
+      envVars.TIERLOCK_PAYMENT_WEBHOOK_SECRET ||
+      envVars.TIERLOCK_WEBHOOK_SECRET,
+    payoutWebhookSecret:
+      envVars.TIERLOCK_PAYOUT_WEBHOOK_SECRET ||
+      envVars.TIERLOCK_WEBHOOK_SECRET,
+    displayName: envVars.TIERLOCK_DISPLAY_NAME,
+    standardWebhookUrl: envVars.TIERLOCK_STANDARD_WEBHOOK_URL,
+    payoutWebhookUrl: envVars.TIERLOCK_PAYOUT_WEBHOOK_URL,
+    payoutPath: envVars.TIERLOCK_PAYOUT_PATH,
+    timeoutMs: envVars.TIERLOCK_TIMEOUT_MS,
   },
 
   redis: {

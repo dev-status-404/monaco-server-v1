@@ -23,11 +23,12 @@ const formatWalletTransaction = (tx) => {
   return {
     ...plain,
     address: meta.address || null,
-    magic_link: meta.magicLink || null,
-    magicLink: meta.magicLink || null,
+    payment_url: meta.paymentUrl || null,
+    paymentUrl: meta.paymentUrl || null,
+    magic_link: meta.paymentUrl || meta.magicLink || null,
+    magicLink: meta.paymentUrl || meta.magicLink || null,
     magic_link_expires_at: meta.magicLinkExpiresAt || null,
     magicLinkExpiresAt: meta.magicLinkExpiresAt || null,
-    // Prefer USD amount so the UI always displays dollars
     amount: meta.amountUsd || meta.amount || plain.amount || null,
     amount_usd: meta.amountUsd || null,
     amountUsd: meta.amountUsd || null,
@@ -96,7 +97,7 @@ const getTransactionDetail = async ({ userId, txId }) => {
   let providerTransaction = null;
 
   const providerId = tx?.meta?.providerTransactionId || tx?.meta?.providerResponse?.transactionId;
-  if (userContext && providerId) {
+  if (userContext && providerId && tx?.meta?.provider === "PointsMate") {
     providerTransaction = await pointsmateClient.getTransaction({
       accountId: userContext.accountId,
       transactionId: providerId,

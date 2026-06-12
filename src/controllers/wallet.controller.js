@@ -6,9 +6,10 @@ import { walletServiceV2 } from "../services/wallet.service.js";
 
 const depositValidation = validate([
   body("userId").isUUID(),
-  body("amount").optional().isInt({ min: 1 }),
-  body("amountSats").optional().isInt({ min: 1 }),
-  body("type").isIn(["lightning", "onchain", "on-chain"]),
+  body("amount").optional().isFloat({ min: 1 }),
+  body("amountSats").optional().isFloat({ min: 1 }),
+  body("type").optional().isString().isLength({ max: 50 }),
+  body("paymentChannel").optional().isString().isLength({ max: 50 }),
   body("memo").optional().isString().isLength({ max: 100 }),
   body("referenceId").optional().isString().isLength({ max: 128 }),
   body("gameId").optional().isUUID(),

@@ -1,11 +1,13 @@
 import createError from "http-errors";
 import { v4 as uuidv4 } from "uuid";
-import { Op, fn, col, literal } from "sequelize";
+import { Op } from "sequelize";
 import Deposit from "../models/deposits.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import WalletAccount from "../models/wallet_account.model.js";
 import { sequelize } from "../config/db.js";
+import config from "../config/env.js";
 import { pointsmateClient } from "../config/pointsmateClient.js";
+import { tierlockClient } from "../config/tierlockClient.js";
 import { walletIntegrationService } from "./walletIntegrationService.js";
 import { transactionService } from "./transaction.service.js";
 import { emitToUserAndAdmins } from "../realtime/socket.js";
@@ -84,7 +86,7 @@ const createDeposit = async (data) => {
 const getDeposits = async (q) => {
   const { user_id, game_id, provider, status, page = 1, limit = 10, id } = q;
 
-  let where = {};
+  const where = {};
   if (user_id) where.user_id = user_id;
   if (game_id) where.game_id = game_id;
   if (provider) where.provider = provider;
@@ -93,14 +95,13 @@ const getDeposits = async (q) => {
 
   const { rows: deposits, count } = await Deposit.findAndCountAll({
     where,
-    offset: (parseInt(page) - 1) * parseInt(limit),
-    limit: parseInt(limit),
+    offset: (parseInt(page, 10) - 1) * parseInt(limit, 10),
+    limit: parseInt(limit, 10),
     include: [
       {
         association: "user",
         attributes: ["id", "email", "firstName", "lastName"],
       },
-      // OPTIONAL: only if you add Deposit.belongsTo(Game, { as: "game", foreignKey: "game_id" })
       {
         association: "game",
         attributes: ["id", "name", "status"],
@@ -137,10 +138,10 @@ const updateDeposit = async (id, data) => {
     }
 
     const nextStatus = data.status ?? existingDeposit.status;
-    const shouldTrigger = walletIntegrationService.shouldTriggerDepositReceive(
-      existingDeposit.status,
-      nextStatus,
-    );
+    const terminalStatuses = new Set(["confirmed", "approved", "completed"]);
+    const shouldCredit =
+      !terminalStatuses.has(String(existingDeposit.status || "").toLowerCase()) &&
+      terminalStatuses.has(String(nextStatus || "").toLowerCase());
 
     const [updatedCount] = await Deposit.update(data, {
       where: { id },
@@ -153,17 +154,13 @@ const updateDeposit = async (id, data) => {
 
     const updatedDeposit = await Deposit.findByPk(id, { transaction: tx });
 
-    if (shouldTrigger) {
+    if (shouldCredit) {
       const walletAccount = await ensureWalletAccount({
         userId: updatedDeposit.user_id,
         transaction: tx,
       });
 
-      const idempotencyKey = walletIntegrationService.buildIdempotencyKey({
-        entityType: "deposit",
-        entityId: updatedDeposit.id,
-        status: nextStatus,
-      });
+      const idempotencyKey = `manual-deposit:${updatedDeposit.id}:${nextStatus}`;
 
       let walletTransaction = await WalletTransaction.findOne({
         where: { idempotency_key: idempotencyKey },
@@ -177,8 +174,8 @@ const updateDeposit = async (id, data) => {
             type: "deposit",
             direction: "credit",
             amount: updatedDeposit.amount,
-            status: "pending",
-            api_status: "pending",
+            status: "completed",
+            api_status: "SUCCESS",
             reference_type: "deposit",
             reference_id: updatedDeposit.id,
             user_id: updatedDeposit.user_id,
@@ -186,7 +183,7 @@ const updateDeposit = async (id, data) => {
             game_name: updatedDeposit.game_name,
             idempotency_key: idempotencyKey,
             meta: {
-              provider: "PointsMate",
+              provider: "manual",
               stage: "approval",
               targetStatus: nextStatus,
             },
@@ -195,29 +192,14 @@ const updateDeposit = async (id, data) => {
         );
       }
 
-      const providerResponse =
-        await walletIntegrationService.createReceiveRequest({
-          accountId: walletAccount.id,
-          type: updatedDeposit.provider,
-          amount: updatedDeposit.amount,
-          memo: `Deposit ${updatedDeposit.id}`,
-          referenceId: `deposit:${updatedDeposit.id}`,
-          idempotencyKey,
-        });
-
       await walletTransaction.update(
         {
           status: "completed",
           api_status: "SUCCESS",
-          meta: {
-            ...(walletTransaction.meta || {}),
-            providerResponse,
-          },
         },
         { transaction: tx },
       );
 
-      // Credit the user's wallet account balance
       await walletAccount.increment("balance", {
         by: Number(updatedDeposit.amount),
         transaction: tx,
@@ -275,6 +257,7 @@ const depositFunds = async ({
   amount,
   amountSats,
   type,
+  paymentChannel,
   memo,
   referenceId,
   gameId,
@@ -285,19 +268,18 @@ const depositFunds = async ({
     throw createError(404, "user-or-wallet-not-found");
   }
 
-  const normalizedType = String(type || "").toLowerCase();
-  if (!["lightning", "onchain", "on-chain"].includes(normalizedType)) {
-    throw createError(400, "invalid-receive-type");
-  }
-
   const numericAmount = normalizeDepositAmount({ amount, amountSats });
-
-  const safeReferenceId = referenceId || uuidv4();
+  const normalizedType = String(type || "").toLowerCase();
+  const normalizedChannel = String(paymentChannel || "").toLowerCase();
+  const useTierlock =
+    normalizedChannel === "tierlock" || normalizedType === "tierlock";
+  const orderId =
+    referenceId || `ORD-DEPOSIT-${uuidv4().replace(/-/g, "").slice(0, 12)}`;
   const tx = await sequelize.transaction();
 
   try {
     const existing = await WalletTransaction.findOne({
-      where: { idempotency_key: safeReferenceId },
+      where: { idempotency_key: orderId },
       transaction: tx,
     });
 
@@ -305,54 +287,108 @@ const depositFunds = async ({
       throw createError(409, "duplicate-reference-id");
     }
 
-    const walletTx = await WalletTransaction.create(
-      {
-        wallet_account_id: userContext.wallet.id,
-        user_id: userId,
-        type: "deposit",
-        direction: "credit",
-        // Store the user-entered USD amount directly — not a BTC/sats conversion
+    let walletTx;
+    let provider;
+
+    if (useTierlock) {
+      walletTx = await WalletTransaction.create(
+        {
+          wallet_account_id: userContext.wallet.id,
+          user_id: userId,
+          type: "deposit",
+          direction: "credit",
+          amount: numericAmount,
+          status: "pending",
+          api_status: "pending",
+          reference_type: "tierlock_checkout",
+          game_id: gameId || null,
+          game_name: gameName || null,
+          idempotency_key: orderId,
+          meta: {
+            provider: "Tierlock",
+            memo,
+            amountUsd: String(numericAmount),
+            orderId,
+            paymentChannel: paymentChannel || type || null,
+          },
+        },
+        { transaction: tx },
+      );
+
+      provider = await tierlockClient.generateCheckoutLink({
+        displayName: config.tierlock.displayName,
+        total: numericAmount,
+        orderId,
+      });
+
+      await walletTx.update(
+        {
+          api_status: "checkout_created",
+          meta: {
+            ...(walletTx.meta || {}),
+            provider: "Tierlock",
+            providerResponse: provider,
+            linkKey: provider.link_key || null,
+            paymentUrl: provider.payment_url,
+            checkoutExpiresIn: provider.expires_in || null,
+            amountUsd: String(numericAmount),
+            orderId,
+          },
+        },
+        { transaction: tx },
+      );
+    } else {
+      if (!["lightning", "onchain", "on-chain"].includes(normalizedType)) {
+        throw createError(400, "invalid-receive-type");
+      }
+
+      walletTx = await WalletTransaction.create(
+        {
+          wallet_account_id: userContext.wallet.id,
+          user_id: userId,
+          type: "deposit",
+          direction: "credit",
+          amount: numericAmount,
+          status: "pending",
+          api_status: "pending",
+          reference_type: "pointsmate_receive",
+          game_id: gameId || null,
+          game_name: gameName || null,
+          idempotency_key: orderId,
+          meta: {
+            memo,
+            amountUsd: String(numericAmount),
+            amountSats: String(numericAmount),
+          },
+        },
+        { transaction: tx },
+      );
+
+      provider = await pointsmateClient.createReceive({
+        accountId: userContext.accountId,
+        type: normalizedType.includes("on") ? "onchain" : "lightning",
         amount: numericAmount,
-        status: "pending",
-        api_status: "pending",
-        reference_type: "pointsmate_receive",
-        game_id: gameId || null,
-        game_name: gameName || null,
-        idempotency_key: safeReferenceId,
-        meta: {
-          memo,
-          amountUsd: String(numericAmount),
-          amountSats: String(numericAmount),
-        },
-      },
-      { transaction: tx },
-    );
+        memo,
+        referenceId: orderId,
+      });
 
-    const provider = await pointsmateClient.createReceive({
-      accountId: userContext.accountId,
-      type: normalizedType.includes("on") ? "onchain" : "lightning",
-      amount: numericAmount,
-      memo,
-      referenceId: safeReferenceId,
-    });
-
-    await walletTx.update(
-      {
-        api_status: "created",
-        meta: {
-          ...(walletTx.meta || {}),
-          providerTransactionId: provider.transactionId,
-          providerResponse: provider,
-          address: provider.address,
-          magicLink: provider.magicLink,
-          magicLinkExpiresAt: provider.magicLinkExpiresAt,
-          // Prefer USD amount from provider; fall back to what user entered
-          amountUsd: provider.amountUsd ?? String(numericAmount),
-          amountSats: provider.amountSats || String(numericAmount),
+      await walletTx.update(
+        {
+          api_status: "created",
+          meta: {
+            ...(walletTx.meta || {}),
+            providerTransactionId: provider.transactionId,
+            providerResponse: provider,
+            address: provider.address,
+            magicLink: provider.magicLink,
+            magicLinkExpiresAt: provider.magicLinkExpiresAt,
+            amountUsd: provider.amountUsd ?? String(numericAmount),
+            amountSats: provider.amountSats || String(numericAmount),
+          },
         },
-      },
-      { transaction: tx },
-    );
+        { transaction: tx },
+      );
+    }
 
     await tx.commit();
 
@@ -363,25 +399,51 @@ const depositFunds = async ({
       transactionId: txPayload.id,
       userId,
       status: txPayload.status,
-      api_status: "created",
+      api_status: useTierlock ? "checkout_created" : "created",
       data: {
         ...txPayload,
-        address: provider.address,
-        magic_link: provider.magicLink,
+        ...(useTierlock
+          ? {
+              payment_url: provider.payment_url,
+              order_id: orderId,
+            }
+          : {
+              address: provider.address,
+              magic_link: provider.magicLink,
+            }),
       },
     });
 
     await notificationService.createForUserAndAdmins({
       userId,
       type: "deposit",
-      title: "Deposit initiated",
-      message: `Deposit transaction ${txPayload.id} is initiated.`,
+      title: useTierlock ? "Deposit checkout created" : "Deposit initiated",
+      message: useTierlock
+        ? `Deposit transaction ${txPayload.id} is awaiting Tierlock payment completion.`
+        : `Deposit transaction ${txPayload.id} is initiated.`,
       meta: {
         transactionId: txPayload.id,
         status: txPayload.status,
-        api_status: "created",
+        api_status: useTierlock ? "checkout_created" : "created",
+        ...(useTierlock ? { orderId } : {}),
       },
     });
+
+    if (useTierlock) {
+      return {
+        transactionId: walletTx.id,
+        order_id: orderId,
+        orderId,
+        link_key: provider.link_key,
+        payment_url: provider.payment_url,
+        paymentUrl: provider.payment_url,
+        expires_in: provider.expires_in,
+        amount: String(numericAmount),
+        amount_usd: String(numericAmount),
+        amountUsd: String(numericAmount),
+        status: "PENDING",
+      };
+    }
 
     return {
       transactionId: walletTx.id,
@@ -391,7 +453,6 @@ const depositFunds = async ({
       magicLink: provider.magicLink,
       magic_link_expires_at: provider.magicLinkExpiresAt,
       magicLinkExpiresAt: provider.magicLinkExpiresAt,
-      // Return USD amount so the UI can display dollars
       amount: provider.amountUsd ?? String(numericAmount),
       amount_usd: provider.amountUsd ?? String(numericAmount),
       amountUsd: provider.amountUsd ?? String(numericAmount),
@@ -404,17 +465,9 @@ const depositFunds = async ({
   }
 };
 
-/**
- * Returns only games where the user's net balance (total credits - total debits)
- * is > 0, i.e. they have deposited at least $1 more than they have withdrawn.
- */
 const getDepositedGames = async (userId) => {
   if (!userId) throw createError(400, "user_id-required");
 
-  // Fetch all relevant wallet_transactions for this user that have a game_id:
-  // - credits: only "completed" (deposit actually landed)
-  // - debits:  "pending" or "completed" (withdrawal initiated or settled);
-  //            "failed" and "canceled" are excluded so rejected withdrawals don't reduce balance
   const rows = await WalletTransaction.findAll({
     where: {
       user_id: userId,
@@ -428,7 +481,6 @@ const getDepositedGames = async (userId) => {
     raw: true,
   });
 
-  // Compute net balance per game: sum(credits) - sum(debits)
   const gameMap = new Map();
   for (const row of rows) {
     const gid = row.game_id;
@@ -444,12 +496,16 @@ const getDepositedGames = async (userId) => {
     }
   }
 
-  // Only return games where net remaining balance is at least $1
   const games = Array.from(gameMap.values())
     .filter((g) => g.net >= 1)
     .map(({ id, name }) => ({ id, name }));
 
-  return { success: true, data: games, message: "deposited-games-retrieved", code: 200 };
+  return {
+    success: true,
+    data: games,
+    message: "deposited-games-retrieved",
+    code: 200,
+  };
 };
 
 export const depositService = {

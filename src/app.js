@@ -57,15 +57,26 @@ const corsOptions = {
     "x-recaptcha-token",
     "X-Webhook-Hash",
     "x-webhook-hash",
+    "X-Webhook-Signature",
+    "x-webhook-signature",
   ],
 };
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
+const webhookJsonParser = express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  },
+});
+
 // Webhooks are mounted before global JSON middleware so they can be processed independently.
-app.use("/webhook", express.json({ limit: "2mb" }), webhookRoutes);
-app.use(`${globalPrefix}/webhooks`, express.json({ limit: "2mb" }), webhookRoutes);
+app.use("/webhook", webhookJsonParser, webhookRoutes);
+app.use(`${globalPrefix}/webhooks`, webhookJsonParser, webhookRoutes);
+app.use("/tierlock/webhook", webhookJsonParser, webhookRoutes);
+app.use(`${globalPrefix}/tierlock/webhook`, webhookJsonParser, webhookRoutes);
 
 app.use(express.json());
 app.use(cookieParser());

@@ -5,6 +5,7 @@ import WalletAccount from "../models/wallet_account.model.js";
 import WalletTransaction from "../models/wallet_transactions.model.js";
 import { sequelize } from "../config/db.js";
 import { walletIntegrationService } from "./walletIntegrationService.js";
+import { tierlockClient } from "../config/tierlockClient.js";
 import { transactionService } from "./transaction.service.js";
 import { emitToUserAndAdmins } from "../realtime/socket.js";
 import { notificationService } from "./notificationService.js";
@@ -130,21 +131,22 @@ const updateWithdrawalRequest = async (data) => {
     const nextStatus = data.status ?? existingWithdrawal.status;
     const prevStatus = String(existingWithdrawal.status).toLowerCase();
     const normalizedNext = String(nextStatus).toLowerCase();
+    const method = String(
+      payload.method ?? existingWithdrawal.method ?? "pointsmate",
+    ).toLowerCase();
+    const isTierlock = method === "tierlock";
+    const isPixPay = method === "pixpay";
 
     const shouldTriggerApproval =
       prevStatus !== "approved" && normalizedNext === "approved";
 
-    // Prevent re-approval if already approved
     if (prevStatus === "approved" && normalizedNext === "approved") {
       throw createError(400, "withdrawal-already-approved");
     }
 
-    // Prevent approving a rejected withdrawal
     if (prevStatus === "rejected" && normalizedNext === "approved") {
       throw createError(400, "withdrawal-already-rejected");
     }
-
-    const shouldTrigger = shouldTriggerApproval;
 
     const [updatedCount] = await WithdrawalRequest.update(payload, {
       where: { id: data.id },
@@ -159,8 +161,7 @@ const updateWithdrawalRequest = async (data) => {
       transaction: tx,
     });
 
-    if (shouldTrigger) {
-      // Use the stored destination directly from DB records (not via payload normalizer)
+    if (shouldTriggerApproval) {
       const destination = String(
         updatedWithdrawal.destination || existingWithdrawal.destination || "",
       ).trim();
@@ -168,109 +169,243 @@ const updateWithdrawalRequest = async (data) => {
         throw createError(400, "withdrawal-destination-required");
       }
 
-      const platformAccountId = config.pointsMate.accountId;
-      if (!platformAccountId) {
-        throw createError(500, "pointsmate-account-id-required");
-      }
-
-      // Ensure FK-safe wallet account for legacy users who do not have one yet.
       const userWalletAccount = await ensureWalletAccount({
         userId: updatedWithdrawal.user_id,
         transaction: tx,
       });
 
-      const idempotencyKey = walletIntegrationService.buildIdempotencyKey({
-        entityType: "withdrawal",
-        entityId: updatedWithdrawal.id,
-        status: nextStatus,
-      });
+      if (isTierlock) {
+        const orderId = `CASH-OUT-${String(updatedWithdrawal.id)
+          .replace(/-/g, "")
+          .slice(0, 12)}`;
 
-      let walletTransaction = await WalletTransaction.findOne({
-        where: { idempotency_key: idempotencyKey },
-        transaction: tx,
-      });
+        let walletTransaction = await WalletTransaction.findOne({
+          where: { idempotency_key: orderId },
+          transaction: tx,
+        });
 
-      if (!walletTransaction) {
-        walletTransaction = await WalletTransaction.create(
+        if (!walletTransaction) {
+          walletTransaction = await WalletTransaction.create(
+            {
+              wallet_account_id: userWalletAccount.id,
+              type: "withdrawal",
+              direction: "debit",
+              amount: updatedWithdrawal.amount,
+              status: "pending",
+              api_status: "pending",
+              reference_type: "withdrawal",
+              reference_id: updatedWithdrawal.id,
+              user_id: updatedWithdrawal.user_id,
+              game_id: updatedWithdrawal.game_id,
+              game_name: updatedWithdrawal.game_name,
+              idempotency_key: orderId,
+              meta: {
+                provider: "Tierlock",
+                stage: "release",
+                orderId,
+                destination,
+              },
+            },
+            { transaction: tx },
+          );
+        }
+
+        const providerResponse = await tierlockClient.createPayoutLink({
+          orderId,
+          phoneNumber: destination,
+          amount: updatedWithdrawal.amount,
+          memo: `Withdrawal ${updatedWithdrawal.id}`,
+        });
+
+        await updatedWithdrawal.update(
           {
-            wallet_account_id: userWalletAccount.id,
-            type: "withdrawal",
-            direction: "debit",
-            amount: updatedWithdrawal.amount,
-            status: "pending",
-            api_status: "pending",
-            reference_type: "withdrawal",
-            reference_id: updatedWithdrawal.id,
-            user_id: updatedWithdrawal.user_id,
-            game_id: updatedWithdrawal.game_id,
-            game_name: updatedWithdrawal.game_name,
-            idempotency_key: idempotencyKey,
+            status: providerResponse?.success === false ? "failed" : "processing",
+            api_status:
+              providerResponse?.success === false
+                ? "failed"
+                : "payment_link_sent",
+          },
+          { transaction: tx },
+        );
+
+        await walletTransaction.update(
+          {
+            status: providerResponse?.success === false ? "failed" : "pending",
+            api_status:
+              providerResponse?.success === false
+                ? "failed"
+                : "payment_link_sent",
             meta: {
-              provider: "PointsMate",
-              stage: "approval",
-              targetStatus: nextStatus,
+              ...(walletTransaction.meta || {}),
+              provider: "Tierlock",
+              providerResponse,
+              orderId,
               destination,
             },
           },
           { transaction: tx },
         );
-      }
+      } else if (isPixPay) {
+        const idempotencyKey = `pixpay:withdrawal:${updatedWithdrawal.id}:approved`;
 
-      const providerResponse = await walletIntegrationService.createSendRequest(
-        {
-          accountId: platformAccountId,
-          address: destination,
-          amount: updatedWithdrawal.amount,
-          memo: `Withdrawal ${updatedWithdrawal.id}`,
-          referenceId: `withdrawal:${updatedWithdrawal.id}`,
-          idempotencyKey,
-        },
-      );
+        let walletTransaction = await WalletTransaction.findOne({
+          where: { idempotency_key: idempotencyKey },
+          transaction: tx,
+        });
 
-      await updatedWithdrawal.update(
-        {
-          api_status:
-            providerResponse?.isSucceed === false ? "failed" : "initiated",
-        },
-        { transaction: tx },
-      );
+        if (!walletTransaction) {
+          walletTransaction = await WalletTransaction.create(
+            {
+              wallet_account_id: userWalletAccount.id,
+              type: "withdrawal",
+              direction: "debit",
+              amount: updatedWithdrawal.amount,
+              status: "completed",
+              api_status: "manual_completed",
+              reference_type: "withdrawal",
+              reference_id: updatedWithdrawal.id,
+              user_id: updatedWithdrawal.user_id,
+              game_id: updatedWithdrawal.game_id,
+              game_name: updatedWithdrawal.game_name,
+              idempotency_key: idempotencyKey,
+              meta: {
+                provider: "PixPay",
+                stage: "manual-approval",
+                targetStatus: nextStatus,
+                destination,
+              },
+            },
+            { transaction: tx },
+          );
+        }
 
-      await walletTransaction.update(
-        {
-          status: providerResponse?.isSucceed === false ? "failed" : "completed",
-          api_status:
-            providerResponse?.isSucceed === false ? "failed" : "initiated",
-          meta: {
-            ...(walletTransaction.meta || {}),
-            providerResponse,
-            destination,
+        await updatedWithdrawal.update(
+          {
+            status: "approved",
+            api_status: "manual_completed",
           },
-        },
-        { transaction: tx },
-      );
+          { transaction: tx },
+        );
 
-      // Deduct the amount from the user's wallet account balance on approval
-      if (providerResponse?.isSucceed !== false) {
+        await walletTransaction.update(
+          {
+            status: "completed",
+            api_status: "manual_completed",
+            meta: {
+              ...(walletTransaction.meta || {}),
+              destination,
+              provider: "PixPay",
+              manualApprovedAt: new Date().toISOString(),
+            },
+          },
+          { transaction: tx },
+        );
+
         await userWalletAccount.decrement("balance", {
           by: Number(updatedWithdrawal.amount),
           transaction: tx,
         });
+      } else {
+        const platformAccountId = config.pointsMate.accountId;
+        if (!platformAccountId) {
+          throw createError(500, "pointsmate-account-id-required");
+        }
+
+        const idempotencyKey = walletIntegrationService.buildIdempotencyKey({
+          entityType: "withdrawal",
+          entityId: updatedWithdrawal.id,
+          status: nextStatus,
+        });
+
+        let walletTransaction = await WalletTransaction.findOne({
+          where: { idempotency_key: idempotencyKey },
+          transaction: tx,
+        });
+
+        if (!walletTransaction) {
+          walletTransaction = await WalletTransaction.create(
+            {
+              wallet_account_id: userWalletAccount.id,
+              type: "withdrawal",
+              direction: "debit",
+              amount: updatedWithdrawal.amount,
+              status: "pending",
+              api_status: "pending",
+              reference_type: "withdrawal",
+              reference_id: updatedWithdrawal.id,
+              user_id: updatedWithdrawal.user_id,
+              game_id: updatedWithdrawal.game_id,
+              game_name: updatedWithdrawal.game_name,
+              idempotency_key: idempotencyKey,
+              meta: {
+                provider: "PointsMate",
+                stage: "approval",
+                targetStatus: nextStatus,
+                destination,
+              },
+            },
+            { transaction: tx },
+          );
+        }
+
+        const providerResponse = await walletIntegrationService.createSendRequest(
+          {
+            accountId: platformAccountId,
+            address: destination,
+            amount: updatedWithdrawal.amount,
+            memo: `Withdrawal ${updatedWithdrawal.id}`,
+            referenceId: `withdrawal:${updatedWithdrawal.id}`,
+            idempotencyKey,
+          },
+        );
+
+        await updatedWithdrawal.update(
+          {
+            api_status:
+              providerResponse?.isSucceed === false ? "failed" : "initiated",
+          },
+          { transaction: tx },
+        );
+
+        await walletTransaction.update(
+          {
+            status:
+              providerResponse?.isSucceed === false ? "failed" : "completed",
+            api_status:
+              providerResponse?.isSucceed === false ? "failed" : "initiated",
+            meta: {
+              ...(walletTransaction.meta || {}),
+              providerResponse,
+              destination,
+            },
+          },
+          { transaction: tx },
+        );
+
+        if (providerResponse?.isSucceed !== false) {
+          await userWalletAccount.decrement("balance", {
+            by: Number(updatedWithdrawal.amount),
+            transaction: tx,
+          });
+        }
       }
     }
 
-    // Write a canceled wallet transaction record for rejections so there is
-    // always an audit trail — no balance change occurs for rejected requests.
     if (normalizedNext === "rejected" && prevStatus !== "rejected") {
       const userWalletAccount = await ensureWalletAccount({
         userId: updatedWithdrawal.user_id,
         transaction: tx,
       });
 
-      const rejectionKey = walletIntegrationService.buildIdempotencyKey({
-        entityType: "withdrawal",
-        entityId: updatedWithdrawal.id,
-        status: "rejected",
-      });
+      const rejectionKey = isTierlock
+        ? `tierlock:withdrawal:${updatedWithdrawal.id}:rejected`
+        : isPixPay
+          ? `pixpay:withdrawal:${updatedWithdrawal.id}:rejected`
+          : walletIntegrationService.buildIdempotencyKey({
+            entityType: "withdrawal",
+            entityId: updatedWithdrawal.id,
+            status: "rejected",
+          });
 
       const exists = await WalletTransaction.findOne({
         where: { idempotency_key: rejectionKey },
@@ -293,7 +428,11 @@ const updateWithdrawalRequest = async (data) => {
             game_name: updatedWithdrawal.game_name,
             idempotency_key: rejectionKey,
             meta: {
-              provider: "PointsMate",
+              provider: isTierlock
+                ? "Tierlock"
+                : isPixPay
+                  ? "PixPay"
+                  : "PointsMate",
               stage: "rejection",
               adminNote: data.admin_note || null,
               reviewedBy: data.reviewed_by_admin_id || null,
@@ -311,7 +450,12 @@ const updateWithdrawalRequest = async (data) => {
     ).toLowerCase();
     emitToUserAndAdmins(updatedWithdrawal.user_id, "withdrawal:updated", {
       type: "withdrawal",
-      action: normalizedStatus === "approved" ? "approved" : "updated",
+      action:
+        normalizedStatus === "processing"
+          ? "released"
+          : normalizedStatus === "approved"
+            ? "approved"
+            : "updated",
       withdrawalId: updatedWithdrawal.id,
       userId: updatedWithdrawal.user_id,
       status: updatedWithdrawal.status,
@@ -354,6 +498,29 @@ const updateWithdrawalRequest = async (data) => {
       });
     }
 
+    if (normalizedStatus === "processing") {
+      emitToUserAndAdmins(updatedWithdrawal.user_id, "withdrawal:released", {
+        type: "withdrawal",
+        action: "released",
+        withdrawalId: updatedWithdrawal.id,
+        userId: updatedWithdrawal.user_id,
+        status: updatedWithdrawal.status,
+        api_status: updatedWithdrawal.api_status,
+      });
+
+      await notificationService.createForUserAndAdmins({
+        userId: updatedWithdrawal.user_id,
+        type: "withdrawal",
+        title: "Withdrawal released",
+        message: `Withdrawal ${updatedWithdrawal.id} was sent to Tierlock for customer approval.`,
+        meta: {
+          withdrawalId: updatedWithdrawal.id,
+          status: updatedWithdrawal.status,
+          api_status: updatedWithdrawal.api_status,
+        },
+      });
+    }
+
     return {
       success: true,
       data: updatedWithdrawal,
@@ -380,25 +547,19 @@ const getWithdrawalRequest = async (q, requestingUser) => {
     reviewed_by_admin_id,
     admin_note,
   } = q;
-  console.log(q);
 
-  // Pagination fix: Convert strings to numbers to avoid NaN
   const page = Number(q.page) || 1;
   const limit = Number(q.limit) || 10;
   const offset = (page - 1) * limit;
 
-  let where = {};
+  const where = {};
 
-  // ── Security: scope to the requesting user unless they are admin ────────
   const isAdmin = String(requestingUser?.role ?? "").toLowerCase() === "admin";
   if (!isAdmin) {
-    // Non-admin users can ONLY see their own withdrawal requests
     where.user_id = requestingUser?.id;
   } else if (user_id) {
-    // Admins may optionally filter by a specific user
     where.user_id = user_id;
   }
-  // ────────────────────────────────────────────────────────────────────────
 
   if (game_id) where.game_id = game_id;
   if (id) where.id = id;
@@ -414,8 +575,8 @@ const getWithdrawalRequest = async (q, requestingUser) => {
     await WithdrawalRequest.findAndCountAll({
       where,
       order: [["createdAt", "DESC"]],
-      offset: offset,
-      limit: limit,
+      offset,
+      limit,
       attributes: [
         "id",
         "user_id",
@@ -520,13 +681,15 @@ const requestWithdrawal = async ({
     throw createError(400, "game-name-required");
   }
 
+  const normalizedMethod = String(method || "pointsmate").toLowerCase();
+
   const response = await createWithdrawalRequest({
     user_id: userId,
     game_id: gameId,
     game_name: gameName,
     amount: numericAmount,
     currency: currency || "USD",
-    method: "pointsmate",
+    method: normalizedMethod,
     destination,
     status: "requested",
     api_status: "pending",
@@ -537,11 +700,16 @@ const requestWithdrawal = async ({
     withdrawalId: response?.data?.id,
     status: response?.data?.status || "requested",
     api_status: response?.data?.api_status || "pending",
-    message: "Withdrawal requested. Will proceed after admin approval.",
+    message:
+      normalizedMethod === "tierlock"
+        ? "Withdrawal requested. A payout link will be sent after admin approval."
+        : normalizedMethod === "pixpay"
+          ? "Withdrawal requested. PixPay payout will be completed after admin approval."
+        : "Withdrawal requested. Will proceed after admin approval.",
   };
 };
 
-const approveWithdrawalRequest = async ({
+const approveWithdrawalRequest = ({
   id,
   reviewedByAdminId,
   adminNote,
@@ -552,16 +720,14 @@ const approveWithdrawalRequest = async ({
     throw createError(400, "withdrawal-id-required");
   }
 
-  const response = await updateWithdrawalRequest({
+  return updateWithdrawalRequest({
     id,
     status: "approved",
     reviewed_by_admin_id: reviewedByAdminId || null,
     admin_note: adminNote || null,
     destination: destination ?? address,
     address: address ?? destination,
-  });
-
-  return response?.data;
+  }).then((response) => response?.data);
 };
 
 export const withdrawalRequestService = {
