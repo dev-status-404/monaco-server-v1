@@ -13,6 +13,13 @@ import Game from "./games.model.js";
 import GameRequest from "./games_request.model.js";
 import GameCredential from "./game_credentials.model.js";
 import Notification from "./notifications.model.js";
+import UserRole from "./user_roles.model.js";
+import Order from "./orders.model.js";
+import PayoutRequest from "./payout_requests.model.js";
+import PaymentWebhookLog from "./payment_webhook_logs.model.js";
+import PayoutWebhookLog from "./payout_webhook_logs.model.js";
+import AuditLog from "./audit_logs.model.js";
+import SystemSetting from "./system_settings.model.js";
 
 // (Optional) These two are redundant because you define them again inside applyAssociations,
 // but keeping them doesn't break anything. If you want, you can remove these top-level ones.
@@ -239,6 +246,82 @@ export const applyAssociations = () => {
   });
 
   /**
+   * USER ROLES
+   */
+  User.hasMany(UserRole, {
+    as: "userRoles",
+    foreignKey: "user_id",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  UserRole.belongsTo(User, {
+    as: "user",
+    foreignKey: "user_id",
+  });
+
+  /**
+   * ORDERS
+   */
+  User.hasMany(Order, {
+    as: "orders",
+    foreignKey: "user_id",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  Order.belongsTo(User, {
+    as: "user",
+    foreignKey: "user_id",
+  });
+
+  /**
+   * PAYOUT REQUESTS
+   */
+  User.hasMany(PayoutRequest, {
+    as: "payoutRequests",
+    foreignKey: "user_id",
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE",
+  });
+
+  PayoutRequest.belongsTo(User, {
+    as: "user",
+    foreignKey: "user_id",
+  });
+
+  /**
+   * WEBHOOK/AUDIT LOGS
+   */
+  PayoutRequest.hasMany(PayoutWebhookLog, {
+    as: "webhookLogs",
+    foreignKey: "payout_request_id",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+  });
+
+  PayoutWebhookLog.belongsTo(PayoutRequest, {
+    as: "payoutRequest",
+    foreignKey: "payout_request_id",
+  });
+
+  User.hasMany(AuditLog, {
+    as: "auditActions",
+    foreignKey: "actor_user_id",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+    constraints: false,
+  });
+
+  AuditLog.belongsTo(User, {
+    as: "actor",
+    foreignKey: "actor_user_id",
+    onDelete: "SET NULL",
+    onUpdate: "CASCADE",
+    constraints: false,
+  });
+
+  /**
    * GAMES
    */
   Game.hasMany(GameRequest, {
@@ -335,6 +418,13 @@ export const applyAssociations = () => {
     GameRequest,
     GameCredential,
     Notification,
+    UserRole,
+    Order,
+    PayoutRequest,
+    PaymentWebhookLog,
+    PayoutWebhookLog,
+    AuditLog,
+    SystemSetting,
   };
 };
 
@@ -350,4 +440,11 @@ export {
   GameRequest,
   GameCredential,
   Notification,
+  UserRole,
+  Order,
+  PayoutRequest,
+  PaymentWebhookLog,
+  PayoutWebhookLog,
+  AuditLog,
+  SystemSetting,
 };

@@ -5,6 +5,7 @@ import { hashPassword, comparePassword } from "../utils/hash.js";
 import { generateToken } from "../utils/jwt.js";
 import config from "../config/env.js";
 import { sendPasswordResetEmail } from "../utils/email.js";
+import { userRoleService } from "./userRoleService.js";
 
 var googleClient = new OAuth2Client(config.google.clientId);
 
@@ -21,6 +22,7 @@ async function register(userDetail) {
     auth_provider: "local",
     password: passwordHash,
   });
+  await userRoleService.syncUserRole(user);
 
   let redirect = "/auth/signin";
 
@@ -68,6 +70,7 @@ async function login({ email, password }) {
     ],
   });
   if (!user) throw createError(401, "user-not-found");
+  await userRoleService.syncUserRole(user);
   if (user.blocked) throw createError(401, "user-blocked");
   const match = await comparePassword(password, user.password);
   if (!match) throw createError(401, "invalid-password");
@@ -150,6 +153,7 @@ async function googleLogin({ credential }) {
   });
 
   if (user) {
+    await userRoleService.syncUserRole(user);
     token = generateToken(
       {
         sub: user.id,
@@ -176,6 +180,7 @@ async function googleLogin({ credential }) {
     password: passwordHash,
     avatar_url: picture,
   });
+  await userRoleService.syncUserRole(newUser);
   token = generateToken(
     {
       sub: newUser.id,

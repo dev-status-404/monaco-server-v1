@@ -53,6 +53,9 @@ const envVarsSchema = Joi.object()
     FRONTEND_URL: Joi.string().description(
       "Frontend URL for CORS and email templates",
     ),
+    CORS_ALLOWED_ORIGINS: Joi.string().description(
+      "Comma-separated list of allowed CORS origins",
+    ),
 
     // PointsMate
     POINTSMATE_ENABLED: Joi.boolean()
@@ -75,6 +78,57 @@ const envVarsSchema = Joi.object()
 
     // Redis / Queue
     REDIS_URL: Joi.string().description("Redis connection URL"),
+
+    // Tierlock
+    TIERLOCK_API_BASE: Joi.string()
+      .uri()
+      .default("https://api.tierlock.com")
+      .description("Tierlock production API base URL"),
+    TIERLOCK_STAGING_API_BASE: Joi.string()
+      .uri()
+      .default("https://stagingapi.tierlock.com")
+      .description("Tierlock staging API base URL"),
+    TIERLOCK_MERCHANT_ID: Joi.string().allow("").description("Tierlock merchant ID"),
+    TIERLOCK_MERCHANT_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock merchant secret"),
+    TIERLOCK_WEBHOOK_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock webhook secret"),
+    PAYOUT_WEBHOOK_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock payout webhook secret"),
+    TIERLOCK_PAYOUT_MERCHANT_ID: Joi.string()
+      .allow("")
+      .description("Tierlock payout merchant ID"),
+    TIERLOCK_RELAY_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock relay secret"),
+    TIERLOCK_RELAY_URL: Joi.string()
+      .allow("")
+      .description("Tierlock relay URL"),
+    TIERLOCK_API_SHARED_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock API shared secret"),
+    TIERLOCK_PAYOUT_CLIENT_CREDENTIALS: Joi.string()
+      .allow("")
+      .description("Tierlock payout client credentials"),
+    QUOTAGUARDSTATIC_URL: Joi.string()
+      .allow("")
+      .description("Quotaguard static URL"),
+    PIX_PAYMENT_URL: Joi.string()
+      .uri()
+      .default("https://user.pixpaymentpro.com")
+      .description("Pix Pay redirect URL"),
+    TIERLOCK_HMAC_SECRET: Joi.string()
+      .allow("")
+      .description("Tierlock internal HMAC secret"),
+    TIERLOCK_CLIENT_SECRET_BASIC: Joi.string()
+      .allow("")
+      .description("Tierlock client credentials (base64 or prefixed with Basic)"),
+    TIERLOCK_BUY_NOW_URL: Joi.string()
+      .allow("")
+      .description("Tierlock hosted checkout URL"),
   })
   .unknown();
 
@@ -100,6 +154,12 @@ const config = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
   frontendUrl: envVars.FRONTEND_URL,
+  cors: {
+    allowedOrigins: String(envVars.CORS_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  },
 
   db: {
     url: envVars.DB_URL,
@@ -160,6 +220,25 @@ const config = {
 
   redis: {
     url: envVars.REDIS_URL,
+  },
+
+  tierlock: {
+    apiBase: envVars.TIERLOCK_API_BASE,
+    stagingApiBase: envVars.TIERLOCK_STAGING_API_BASE,
+    merchantId: envVars.TIERLOCK_MERCHANT_ID,
+    merchantSecret: envVars.TIERLOCK_MERCHANT_SECRET,
+    webhookSecret: envVars.TIERLOCK_WEBHOOK_SECRET,
+    payoutWebhookSecret: envVars.PAYOUT_WEBHOOK_SECRET,
+    payoutMerchantId: envVars.TIERLOCK_PAYOUT_MERCHANT_ID,
+    relaySecret: envVars.TIERLOCK_RELAY_SECRET,
+    relayUrl: envVars.TIERLOCK_RELAY_URL,
+    apiSharedSecret: envVars.TIERLOCK_API_SHARED_SECRET,
+    payoutClientCredentials: envVars.TIERLOCK_PAYOUT_CLIENT_CREDENTIALS,
+    quotaguardStaticUrl: envVars.QUOTAGUARDSTATIC_URL,
+    pixPaymentUrl: envVars.PIX_PAYMENT_URL,
+    hmacSecret: envVars.TIERLOCK_HMAC_SECRET,
+    clientSecretBasic: envVars.TIERLOCK_CLIENT_SECRET_BASIC,
+    buyNowUrl: envVars.TIERLOCK_BUY_NOW_URL,
   },
 };
 

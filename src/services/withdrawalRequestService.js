@@ -8,6 +8,7 @@ import { walletIntegrationService } from "./walletIntegrationService.js";
 import { transactionService } from "./transaction.service.js";
 import { emitToUserAndAdmins } from "../realtime/socket.js";
 import { notificationService } from "./notificationService.js";
+import { ordersService } from "./ordersService.js";
 
 const normalizeDestination = (payload = {}) => {
   const rawValue = payload.destination ?? payload.address;
@@ -255,6 +256,7 @@ const updateWithdrawalRequest = async (data) => {
           by: Number(updatedWithdrawal.amount),
           transaction: tx,
         });
+        await ordersService.syncUserBalance(updatedWithdrawal.user_id, tx);
       }
     }
 

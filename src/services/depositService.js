@@ -6,10 +6,12 @@ import WalletTransaction from "../models/wallet_transactions.model.js";
 import WalletAccount from "../models/wallet_account.model.js";
 import { sequelize } from "../config/db.js";
 import { pointsmateClient } from "../config/pointsmateClient.js";
+import { tierlockClient } from "../lib/tierlockClient.js";
 import { walletIntegrationService } from "./walletIntegrationService.js";
 import { transactionService } from "./transaction.service.js";
 import { emitToUserAndAdmins } from "../realtime/socket.js";
 import { notificationService } from "./notificationService.js";
+import { ordersService } from "./ordersService.js";
 
 const normalizeDepositAmount = ({ amount, amountSats }) => {
   const rawValue = amount ?? amountSats;
@@ -20,6 +22,13 @@ const normalizeDepositAmount = ({ amount, amountSats }) => {
   }
 
   return numericAmount;
+};
+
+const normalizePaymentMethod = (value) => {
+  const raw = String(value || "pointsmate").trim().toLowerCase();
+  if (raw === "crypto") return "pointsmate";
+  if (raw === "normal") return "tierlock";
+  return raw;
 };
 
 const ensureWalletAccount = async ({ userId, transaction }) => {
@@ -222,6 +231,7 @@ const updateDeposit = async (id, data) => {
         by: Number(updatedDeposit.amount),
         transaction: tx,
       });
+      await ordersService.syncUserBalance(updatedDeposit.user_id, tx);
     }
 
     await tx.commit();
@@ -275,8 +285,12 @@ const depositFunds = async ({
   amount,
   amountSats,
   type,
+  paymentMethod,
+  provider,
   memo,
   referenceId,
+  orderId,
+  displayName,
   gameId,
   gameName,
 }) => {
@@ -285,17 +299,118 @@ const depositFunds = async ({
     throw createError(404, "user-or-wallet-not-found");
   }
 
-  const normalizedType = String(type || "").toLowerCase();
-  if (!["lightning", "onchain", "on-chain"].includes(normalizedType)) {
-    throw createError(400, "invalid-receive-type");
+  const method = normalizePaymentMethod(paymentMethod || provider || "pointsmate");
+  if (!["pointsmate", "tierlock"].includes(method)) {
+    throw createError(400, "invalid-payment-method");
   }
 
   const numericAmount = normalizeDepositAmount({ amount, amountSats });
-
-  const safeReferenceId = referenceId || uuidv4();
   const tx = await sequelize.transaction();
 
   try {
+    if (method === "tierlock") {
+      const safeOrderId = orderId || referenceId || uuidv4();
+
+      const existing = await WalletTransaction.findOne({
+        where: { idempotency_key: safeOrderId },
+        transaction: tx,
+      });
+
+      if (existing) {
+        throw createError(409, "duplicate-order-id");
+      }
+
+      const walletTx = await WalletTransaction.create(
+        {
+          wallet_account_id: userContext.wallet.id,
+          user_id: userId,
+          type: "deposit",
+          direction: "credit",
+          amount: numericAmount,
+          status: "pending",
+          api_status: "pending",
+          reference_type: "tierlock_payment_link",
+          game_id: gameId || null,
+          game_name: gameName || null,
+          idempotency_key: safeOrderId,
+          meta: {
+            provider: "tierlock",
+            orderId: safeOrderId,
+            memo,
+          },
+        },
+        { transaction: tx },
+      );
+
+      const providerResponse = await tierlockClient.createPaymentLink({
+        display_name: displayName || gameName || "Monaco Deposit",
+        total: numericAmount,
+        order_id: safeOrderId,
+      });
+
+      await walletTx.update(
+        {
+          api_status: "created",
+          meta: {
+            ...(walletTx.meta || {}),
+            providerResponse,
+            providerTransactionId:
+              providerResponse?.data?.transaction_id ||
+              providerResponse?.transaction_id ||
+              null,
+            linkKey: providerResponse?.link_key ?? null,
+            paymentUrl: providerResponse?.payment_url ?? null,
+          },
+        },
+        { transaction: tx },
+      );
+
+      await tx.commit();
+
+      const txPayload = walletTx.get({ plain: true });
+      emitToUserAndAdmins(userId, "deposit:updated", {
+        type: "deposit",
+        action: "initiated",
+        transactionId: txPayload.id,
+        userId,
+        status: txPayload.status,
+        api_status: "created",
+      });
+
+      await notificationService.createForUserAndAdmins({
+        userId,
+        type: "deposit",
+        title: "Tierlock payment link created",
+        message: `Tierlock deposit transaction ${txPayload.id} is initiated.`,
+        meta: {
+          transactionId: txPayload.id,
+          status: txPayload.status,
+          api_status: "created",
+        },
+      });
+
+      return {
+        transactionId: walletTx.id,
+        order_id: safeOrderId,
+        orderId: safeOrderId,
+        payment_url: providerResponse?.payment_url ?? null,
+        paymentUrl: providerResponse?.payment_url ?? null,
+        link_key: providerResponse?.link_key ?? null,
+        linkKey: providerResponse?.link_key ?? null,
+        amount: String(numericAmount),
+        amount_usd: String(numericAmount),
+        amountUsd: String(numericAmount),
+        status: "PENDING",
+        provider: "tierlock",
+      };
+    }
+
+    const normalizedType = String(type || "").toLowerCase();
+    if (!["lightning", "onchain", "on-chain"].includes(normalizedType)) {
+      throw createError(400, "invalid-receive-type");
+    }
+
+    const safeReferenceId = referenceId || uuidv4();
     const existing = await WalletTransaction.findOne({
       where: { idempotency_key: safeReferenceId },
       transaction: tx,
@@ -349,6 +464,7 @@ const depositFunds = async ({
           // Prefer USD amount from provider; fall back to what user entered
           amountUsd: provider.amountUsd ?? String(numericAmount),
           amountSats: provider.amountSats || String(numericAmount),
+          provider: "pointsmate",
         },
       },
       { transaction: tx },
@@ -397,6 +513,7 @@ const depositFunds = async ({
       amountUsd: provider.amountUsd ?? String(numericAmount),
       amountSats: provider.amountSats,
       status: "PENDING",
+      provider: "pointsmate",
     };
   } catch (error) {
     await tx.rollback();

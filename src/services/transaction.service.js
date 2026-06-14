@@ -25,6 +25,10 @@ const formatWalletTransaction = (tx) => {
     address: meta.address || null,
     magic_link: meta.magicLink || null,
     magicLink: meta.magicLink || null,
+    payment_url: meta.paymentUrl || null,
+    paymentUrl: meta.paymentUrl || null,
+    link_key: meta.linkKey || null,
+    linkKey: meta.linkKey || null,
     magic_link_expires_at: meta.magicLinkExpiresAt || null,
     magicLinkExpiresAt: meta.magicLinkExpiresAt || null,
     // Prefer USD amount so the UI always displays dollars
@@ -36,6 +40,9 @@ const formatWalletTransaction = (tx) => {
       meta.providerTransactionId || meta.providerResponse?.transactionId || null,
     providerTransactionId:
       meta.providerTransactionId || meta.providerResponse?.transactionId || null,
+    provider: meta.provider || null,
+    order_id: meta.orderId || null,
+    orderId: meta.orderId || null,
   };
 };
 
@@ -95,8 +102,9 @@ const getTransactionDetail = async ({ userId, txId }) => {
   const userContext = await resolveUserContext(userId);
   let providerTransaction = null;
 
-  const providerId = tx?.meta?.providerTransactionId || tx?.meta?.providerResponse?.transactionId;
-  if (userContext && providerId) {
+  const providerId =
+    tx?.meta?.providerTransactionId || tx?.meta?.providerResponse?.transactionId;
+  if (userContext && providerId && tx?.meta?.provider !== "tierlock") {
     providerTransaction = await pointsmateClient.getTransaction({
       accountId: userContext.accountId,
       transactionId: providerId,

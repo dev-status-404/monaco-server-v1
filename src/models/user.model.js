@@ -27,6 +27,11 @@ const User = sequelize.define(
       validate: { isEmail: true },
     },
 
+    display_name: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     password: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -62,6 +67,12 @@ const User = sequelize.define(
     active: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
+    },
+
+    credits_balance: {
+      type: DataTypes.DECIMAL(18, 2),
+      allowNull: false,
+      defaultValue: 0,
     },
   },
   {

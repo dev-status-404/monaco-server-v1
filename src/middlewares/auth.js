@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "../config/env.js";
 import ApiError from "../utils/ApiError.js";
 import User from "../models/user.model.js";
+import { userRoleService } from "../services/userRoleService.js";
 // import Admin from "../models/admin.model.js";
 
 /**
@@ -57,6 +58,8 @@ const auth = (allowedRoles = [], options = {}) => {
       if (!user) {
         throw new ApiError(httpStatus.UNAUTHORIZED, "User not found");
       }
+
+      await userRoleService.syncUserRole(user);
 
       const isAdmin = user?.role === "admin";
       
