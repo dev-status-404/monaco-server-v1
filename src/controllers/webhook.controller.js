@@ -68,10 +68,46 @@ const handleCodeRedeemWebhook = async (req, res) => {
   }
 };
 
+const handleTierlockPaymentWebhook = async (req, res) => {
+  ack(res);
+  try {
+    await enqueueWebhook({
+      channel: "tierlock-payment",
+      payload: req.body,
+      rawBody: req.rawBody,
+      incomingSignature: req.headers["x-webhook-signature"],
+    });
+  } catch (error) {
+    logger.error(
+      { error: error?.message },
+      "tierlock payment webhook enqueue failed",
+    );
+  }
+};
+
+const handleTierlockPayoutWebhook = async (req, res) => {
+  ack(res);
+  try {
+    await enqueueWebhook({
+      channel: "tierlock-payout",
+      payload: req.body,
+      rawBody: req.rawBody,
+      incomingSignature: req.headers["x-webhook-signature"],
+    });
+  } catch (error) {
+    logger.error(
+      { error: error?.message },
+      "tierlock payout webhook enqueue failed",
+    );
+  }
+};
+
 export const webhookController = {
   handleReceiveWebhook,
   handleSendWebhook,
   handleSendLinkWebhook,
   handleCodeGenerateWebhook,
   handleCodeRedeemWebhook,
+  handleTierlockPaymentWebhook,
+  handleTierlockPayoutWebhook,
 };

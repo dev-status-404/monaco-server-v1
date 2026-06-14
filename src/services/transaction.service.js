@@ -31,7 +31,6 @@ const formatWalletTransaction = (tx) => {
     linkKey: meta.linkKey || null,
     magic_link_expires_at: meta.magicLinkExpiresAt || null,
     magicLinkExpiresAt: meta.magicLinkExpiresAt || null,
-    // Prefer USD amount so the UI always displays dollars
     amount: meta.amountUsd || meta.amount || plain.amount || null,
     amount_usd: meta.amountUsd || null,
     amountUsd: meta.amountUsd || null,

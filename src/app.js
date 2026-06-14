@@ -76,6 +76,13 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
+const webhookJsonParser = express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  },
+});
+
 // Webhooks are mounted before global JSON middleware so they can be processed independently.
 app.use("/webhook", express.json({ limit: "2mb" }), webhookRoutes);
 app.use(`${globalPrefix}/webhooks`, express.json({ limit: "2mb" }), webhookRoutes);
